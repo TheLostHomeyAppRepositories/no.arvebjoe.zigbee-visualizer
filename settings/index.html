@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
+    <style>
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .toolbar button {
+        width: auto;
+        margin: 0;
+      }
+
+      .summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 24px;
+        margin-bottom: 12px;
+      }
+
+      .summary div {
+        font-size: 13px;
+      }
+
+      .summary b {
+        display: block;
+        font-size: 18px;
+      }
+
+      #status {
+        font-size: 13px;
+        opacity: 0.7;
+      }
+
+      #dump {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 420px;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        white-space: pre;
+        overflow: auto;
+        resize: vertical;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="homey-header">
+      <h1 class="homey-title" data-i18n="settings.title">Zigbee network</h1>
+      <p class="homey-subtitle" data-i18n="settings.subtitle">
+        The raw state Homey's Zigbee controller reports.
+      </p>
+    </header>
+
+    <div class="toolbar">
+      <button id="refresh" class="homey-button-primary">Refresh</button>
+      <button id="copy" class="homey-button-secondary">Copy JSON</button>
+      <span id="status"></span>
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <textarea id="dump" readonly spellcheck="false"></textarea>
+
+    <script type="text/javascript">
+      function onHomeyReady(Homey) {
+        Homey.ready();
+
+        var dumpElement = document.getElementById('dump');
+        var statusElement = document.getElementById('status');
+        var summaryElement = document.getElementById('summary');
+        var refreshElement = document.getElementById('refresh');
+        var copyElement = document.getElementById('copy');
+
+        function stat(label, value) {
+          var element = document.createElement('div');
+          var strong = document.createElement('b');
+          strong.textContent = value;
+          element.appendChild(strong);
+          element.appendChild(document.createTextNode(label));
+          summaryElement.appendChild(element);
+        }
+
+        function renderSummary(state) {
+          summaryElement.innerHTML = '';
+          if (!state) return;
+
+          var nodes = Object.values(state.nodes || {});
+          var controller = state.controllerState || {};
+          var routers = nodes.filter(function (node) {
+            return node.type === 'router';
+          });
+          var endDevices = nodes.filter(function (node) {
+            return node.type === 'enddevice';
+          });
+
+          stat('nodes', nodes.length);
+          stat('routers', routers.length);
+          stat('end devices', endDevices.length);
+          stat('routes', Object.keys(controller.routes || {}).length);
+          stat('channel', controller.channel != null ? controller.channel : '—');
+          stat('PAN id', controller.panId || '—');
+          stat('ready', state.zigbee_ready ? 'yes' : 'no');
+        }
+
+        function load() {
+          statusElement.textContent = 'Loading…';
+          refreshElement.disabled = true;
+
+          Homey.api('GET', '/state', null, function (err, state) {
+            refreshElement.disabled = false;
+
+            if (err) {
+              summaryElement.innerHTML = '';
+              statusElement.textContent = 'Failed';
+              dumpElement.value = String((err && err.message) || err);
+              return;
+            }
+
+            statusElement.textContent = 'Updated ' + new Date().toLocaleTimeString();
+            dumpElement.value = JSON.stringify(state, null, 2);
+            renderSummary(state);
+          });
+        }
+
+        copyElement.addEventListener('click', function () {
+          dumpElement.select();
+          document.execCommand('copy');
+          statusElement.textContent = 'Copied to clipboard';
+        });
+
+        refreshElement.addEventListener('click', load);
+
+        load();
+      }
+    </script>
+  </body>
+</html>
