@@ -1,6 +1,6 @@
 {
   "settings": {
     "title": "Zigbee network",
-    "subtitle": "The raw state Homey's Zigbee controller reports."
+    "subtitle": "Every device, the links between them, and the route Homey uses to reach each one."
   }
 }

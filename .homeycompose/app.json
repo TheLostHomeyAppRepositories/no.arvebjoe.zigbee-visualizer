@@ -20,6 +20,10 @@
     "homey:manager:api"
   ],
   "api": {
+    "getZigbeeGraph": {
+      "method": "GET",
+      "path": "/network"
+    },
     "getZigbeeState": {
       "method": "GET",
       "path": "/state"

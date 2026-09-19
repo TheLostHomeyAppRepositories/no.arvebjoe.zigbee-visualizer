@@ -2,38 +2,7 @@
 
 import Homey from 'homey';
 import { HomeyAPI } from 'homey-api';
-
-/**
- * The shape of `GET /api/manager/zigbee/state`, as far as we rely on it.
- * Everything else the controller reports is passed through untouched.
- */
-export type ZigbeeState = {
-  zigbee_error: string | null;
-  zigbee_ready: boolean;
-  zigbee_state?: { currentCommand?: string };
-  controllerState?: {
-    channel?: number;
-    panId?: string;
-    extendedPanId?: string;
-    IEEEAddress?: string;
-    softwareVersion?: string;
-    /** networkAddress -> ordered list of relays the controller routes through */
-    routes?: Record<string, number[]>;
-    [key: string]: unknown;
-  };
-  /** ieeeAddress -> node */
-  nodes?: Record<string, {
-    ieeeAddr?: string;
-    nwkAddr?: number;
-    type?: string;
-    name?: string;
-    modelId?: string;
-    manufacturerName?: string;
-    receiveWhenIdle?: boolean;
-    [key: string]: unknown;
-  }>;
-  [key: string]: unknown;
-};
+import { buildGraph, Graph, ZigbeeState } from './lib/zigbee-graph';
 
 /** The slice of the Web API client this app uses. */
 type HomeyApiClient = {
@@ -82,6 +51,19 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       + `${Object.keys(state?.controllerState?.routes ?? {}).length} routes`);
 
     return state;
+  }
+
+  /**
+   * The same data as a graph: every device, the links between them, the route
+   * the controller uses to reach each one, and a quality grade per hop.
+   */
+  async getZigbeeGraph(): Promise<Graph> {
+    const graph = buildGraph(await this.getZigbeeState());
+
+    this.log(`Built graph: ${graph.meta.deviceCount} devices, ${graph.links.length} links, `
+      + `${graph.meta.weakLinkCount} weak`);
+
+    return graph;
   }
 
 };

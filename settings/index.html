@@ -1,53 +1,327 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
     <style>
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 12px;
+      /* ---------------------------------------------------------- theme --
+         The page follows the viewer's theme. Hop and quality colours are
+         defined twice so they stay legible on either ground. */
+      :root {
+        --canvas: #f2f4f7;
+        --canvas-line: #dde2e9;
+        --surface: #ffffff;
+        --border: #dfe3e8;
+        --text: #1f2933;
+        --text-dim: #6b7684;
+        --accent: #0f9b77;
+        --warn: #9a6700;
+        --danger: #cf222e;
+
+        --h0: #1f2933;
+        --h1: #0f9b77;
+        --h2: #2563eb;
+        --h3: #7c3aed;
+        --h4: #db2777;
+        --ghost: #98a1ac;
+
+        --q-good: #1a7f37;
+        --q-fair: #9a6700;
+        --q-weak: #bc4c00;
+        --q-bad: #cf222e;
+        --q-unknown: #a0a8b4;
+
+        --link-base: #c2c9d2;
       }
 
-      .toolbar button {
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: #0e1116;
+          --canvas-line: #1e2633;
+          --surface: #161b22;
+          --border: #262d3a;
+          --text: #e6edf3;
+          --text-dim: #8b98a9;
+          --accent: #4dd4ac;
+          --warn: #e3b341;
+          --danger: #f85149;
+
+          --h0: #f0f6fc;
+          --h1: #4dd4ac;
+          --h2: #58a6ff;
+          --h3: #bc8cff;
+          --h4: #ff8fab;
+          --ghost: #6e7681;
+
+          --q-good: #3fb950;
+          --q-fair: #d6b13a;
+          --q-weak: #e8883a;
+          --q-bad: #f4544c;
+          --q-unknown: #4a5361;
+
+          --link-base: #303948;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      html, body { overflow-x: hidden; }
+      body { color: var(--text); }
+
+      /* ----------------------------------------------------- stat strip --
+         Horizontally scrollable so a narrow phone never wraps it into a
+         three-line block above the graph. */
+      .netstats {
+        display: flex;
+        gap: 18px;
+        overflow-x: auto;
+        padding: 2px 0 8px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .netstats::-webkit-scrollbar { display: none; }
+      .netstat { flex: 0 0 auto; }
+      .netstat .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+      .netstat .k { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; }
+      .netstat .v.warn { color: var(--q-weak); }
+
+      /* -------------------------------------------------------- toolbar -- */
+      .toolbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+      .toolbar input[type="search"] {
+        width: 100%;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 9px 12px;
+        font-size: 14px;
+        outline: none;
+        -webkit-appearance: none;
+      }
+      .toolbar input[type="search"]:focus { border-color: var(--accent); }
+
+      .chips-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+      .chips-row::-webkit-scrollbar { display: none; }
+      .pill {
+        flex: 0 0 auto;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text-dim);
+        border-radius: 20px;
+        padding: 7px 13px;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+        white-space: nowrap;
         width: auto;
         margin: 0;
       }
+      .pill[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+      .pill:disabled { opacity: .5; }
 
-      .summary {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 24px;
-        margin-bottom: 12px;
+      /* ---------------------------------------------------------- graph --
+         Full bleed: escapes whatever horizontal padding the settings view
+         puts on the body, so the mesh gets the entire screen width. */
+      .graph-wrap {
+        position: relative;
+        width: 100vw;
+        margin-left: 50%;
+        transform: translateX(-50%);
+        height: clamp(320px, 62vh, 620px);
+        height: clamp(320px, 62svh, 620px);
+        background: var(--canvas);
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        overflow: hidden;
+        /* The gesture inside this box is always a pan, never a page scroll —
+           declared on the container as well as the canvas, because Safari
+           resolves touch-action from the element actually hit, and that is
+           sometimes an SVG child. */
+        touch-action: none;
+        overscroll-behavior: contain;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
+      /* Not quite full height: a strip of page stays draggable, so the page can
+         still be scrolled (and the Shrink button reached) while expanded. */
+      .graph-wrap.tall { height: calc(100vh - 120px); height: calc(100svh - 120px); }
+      #canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 
-      .summary div {
-        font-size: 13px;
-      }
-
-      .summary b {
-        display: block;
-        font-size: 18px;
-      }
-
-      #status {
-        font-size: 13px;
-        opacity: 0.7;
-      }
-
-      #dump {
-        width: 100%;
-        box-sizing: border-box;
-        min-height: 420px;
-        font-family: ui-monospace, Menlo, Consolas, monospace;
+      .hint {
+        position: absolute;
+        left: 50%;
+        bottom: 10px;
+        transform: translateX(-50%);
         font-size: 11px;
-        line-height: 1.45;
-        white-space: pre;
-        overflow: auto;
-        resize: vertical;
+        color: var(--text-dim);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 5px 12px;
+        pointer-events: none;
+        transition: opacity .3s;
+        max-width: 92%;
+        text-align: center;
       }
+
+      .zoombar { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+      .zoombar button {
+        width: 34px; height: 34px; margin: 0; padding: 0;
+        border-radius: 8px; border: 1px solid var(--border);
+        background: var(--surface); color: var(--text);
+        font-size: 17px; line-height: 1; cursor: pointer;
+      }
+
+      /* Below the graph, never over it — the mesh keeps the whole canvas. */
+      .legend {
+        display: flex; flex-wrap: wrap; gap: 5px 12px;
+        font-size: 10px; color: var(--text-dim);
+        padding: 9px 0 0;
+        line-height: 1.4;
+      }
+      .legend span { display: flex; align-items: center; gap: 4px; }
+
+      /* --------------------------------------------------- graph shapes -- */
+      .ring { fill: none; stroke: var(--canvas-line); stroke-width: 1px; }
+      .ring-label { fill: var(--text-dim); font-size: 9px; text-anchor: middle; opacity: .7; letter-spacing: .6px; }
+
+      .link { stroke: var(--link-base); fill: none; stroke-linecap: round; }
+      .link.q-good { stroke: var(--q-good); stroke-opacity: .55; }
+      .link.q-fair { stroke: var(--q-fair); stroke-opacity: .75; }
+      .link.q-weak { stroke: var(--q-weak); stroke-opacity: .9; }
+      .link.q-bad { stroke: var(--q-bad); stroke-opacity: .95; }
+      .link.q-unknown { stroke: var(--q-unknown); stroke-opacity: .8; stroke-dasharray: 4 4; }
+      .link.binding { stroke: var(--h3); stroke-opacity: .5; stroke-dasharray: 3 3; }
+      .link.dim { stroke-opacity: .15; }
+      .link.onpath { stroke-opacity: 1; }
+
+      .node { cursor: pointer; }
+      .node .body { stroke: var(--canvas); stroke-width: 1.5px; }
+      .node .halo { fill: none; stroke-width: 2px; stroke-opacity: 0; }
+      .node .halo.q-weak { stroke: var(--q-weak); stroke-opacity: .85; }
+      .node .halo.q-bad { stroke: var(--q-bad); stroke-opacity: .95; }
+      .node.ghost .body { fill: none !important; stroke: var(--ghost); stroke-dasharray: 2 2; }
+      .node.dim { opacity: .22; }
+      .node.selected .body { stroke: var(--text); stroke-width: 2.5px; }
+      .node.onpath .body { stroke: var(--accent); stroke-width: 2px; }
+      .node.match .body { stroke: var(--warn); stroke-width: 2.5px; }
+      .node text {
+        font-size: 10px; fill: var(--text-dim); text-anchor: middle;
+        pointer-events: none; paint-order: stroke;
+        stroke: var(--canvas); stroke-width: 3px; stroke-linejoin: round;
+      }
+      .node.selected text, .node.onpath text { fill: var(--text); }
+      .node.selected text { font-weight: 600; }
+
+      /* ------------------------------------------------- selection bar -- */
+      .selbar {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 0 2px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 14px;
+      }
+      .selbar .dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+      .selbar .who { flex: 1 1 auto; min-width: 0; }
+      .selbar .who b { display: block; font-size: 14px; line-height: 1.3; }
+      .selbar .who small { color: var(--text-dim); font-size: 11px; }
+      .selbar button { width: auto; margin: 0; padding: 6px 12px; font-size: 12px; flex: 0 0 auto; }
+
+      /* -------------------------------------------------- detail panel -- */
+      .section { margin-bottom: 22px; }
+      .section h3 {
+        font-size: 10px; text-transform: uppercase; letter-spacing: .8px;
+        color: var(--text-dim); margin: 0 0 8px; font-weight: 600;
+      }
+      .p-head h2 { font-size: 17px; margin: 0 0 4px; line-height: 1.3; }
+      .p-head .sub { font-size: 12px; color: var(--text-dim); }
+      .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 18px; }
+      .badge {
+        display: flex; align-items: center; gap: 5px;
+        font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+        padding: 4px 9px; border-radius: 20px;
+        border: 1px solid var(--border); color: var(--text-dim);
+      }
+      .badge.type { color: var(--accent); border-color: var(--accent); }
+      .badge.warn { color: var(--warn); border-color: var(--warn); }
+      .badge.danger { color: var(--danger); border-color: var(--danger); }
+
+      .kv { display: grid; grid-template-columns: minmax(96px, 34%) 1fr; gap: 6px 12px; font-size: 13px; margin: 0; }
+      .kv dt { color: var(--text-dim); }
+      .kv dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+      .route { list-style: none; margin: 0; padding: 0; }
+      .route li { display: flex; align-items: center; gap: 10px; padding: 9px 0; font-size: 13px; }
+      .route li + li { border-top: 1px solid var(--border); }
+      .route .step {
+        width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+        display: grid; place-items: center; font-size: 10px; font-weight: 700; color: var(--canvas);
+      }
+      .route .rname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .route .raddr { color: var(--text-dim); font-family: ui-monospace, Menlo, monospace; font-size: 10px; flex: 0 0 auto; }
+
+      .linklist { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+      .linklist li { display: flex; align-items: center; gap: 9px; padding: 9px 0; cursor: pointer; }
+      .linklist li + li { border-top: 1px solid var(--border); }
+      .wl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .wl-via { color: var(--text-dim); font-size: 11px; display: block; }
+      .wl-rate { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+      .bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 5px; }
+      .bar > span { display: block; height: 100%; background: var(--accent); }
+      .bar.q-bar-good > span { background: var(--q-good); }
+      .bar.q-bar-fair > span { background: var(--q-fair); }
+      .bar.q-bar-weak > span { background: var(--q-weak); }
+      .bar.q-bar-bad > span { background: var(--q-bad); }
+      .bar.q-bar-unknown > span { background: var(--q-unknown); }
+
+      .qhead { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+      .qhead .qpct { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-dim); font-weight: 500; }
+
+      .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+      .chip {
+        font-size: 11px; padding: 3px 7px; border-radius: 5px;
+        background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+        font-family: ui-monospace, Menlo, monospace;
+      }
+      .ep { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+      .ep h4 { margin: 0 0 6px; font-size: 12px; color: var(--text); font-weight: 600; }
+      .ep .ep-label { font-size: 10px; color: var(--text-dim); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: .5px; }
+
+      .q-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+      .q-dot.q-good { background: var(--q-good); }
+      .q-dot.q-fair { background: var(--q-fair); }
+      .q-dot.q-weak { background: var(--q-weak); }
+      .q-dot.q-bad { background: var(--q-bad); }
+      .q-dot.q-unknown { background: var(--q-unknown); }
+      .q-text-good { color: var(--q-good); }
+      .q-text-fair { color: var(--q-fair); }
+      .q-text-weak { color: var(--q-weak); }
+      .q-text-bad { color: var(--q-bad); }
+      .q-text-unknown { color: var(--text-dim); }
+
+      .shape { width: 10px; height: 10px; display: inline-block; background: var(--text-dim); }
+      .shape.circle { border-radius: 50%; }
+      .shape.square { border-radius: 2px; }
+
+      .raw { margin: 26px 0 12px; }
+      .raw summary {
+        font-size: 12px; color: var(--text-dim); cursor: pointer;
+        padding: 10px 0; border-top: 1px solid var(--border);
+      }
+      .raw textarea {
+        width: 100%; min-height: 300px; margin-top: 8px;
+        background: var(--surface); color: var(--text);
+        border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 11px; line-height: 1.45; white-space: pre; resize: vertical;
+      }
+
+      .note { font-size: 12px; line-height: 1.65; color: var(--text-dim); margin: 0; }
+      .linkish { cursor: pointer; color: var(--accent); }
+      .status { font-size: 12px; color: var(--text-dim); min-height: 16px; }
+      .error { color: var(--danger); font-size: 13px; }
     </style>
   </head>
 
@@ -55,91 +329,983 @@
     <header class="homey-header">
       <h1 class="homey-title" data-i18n="settings.title">Zigbee network</h1>
       <p class="homey-subtitle" data-i18n="settings.subtitle">
-        The raw state Homey's Zigbee controller reports.
+        Every device, the links between them, and the route Homey uses to reach each one.
       </p>
     </header>
 
+    <div class="netstats" id="netstats"></div>
+
     <div class="toolbar">
-      <button id="refresh" class="homey-button-primary">Refresh</button>
-      <button id="copy" class="homey-button-secondary">Copy JSON</button>
-      <span id="status"></span>
+      <input id="search" type="search" placeholder="Search name, model, address…" autocomplete="off" />
+      <div class="chips-row">
+        <button class="pill" id="fit" type="button">Fit</button>
+        <button class="pill" id="expand" type="button" aria-pressed="false">Expand</button>
+        <button class="pill" id="labels" type="button" aria-pressed="false">All labels</button>
+        <button class="pill" id="ghosts" type="button" aria-pressed="true">Stale routes</button>
+        <button class="pill" id="bindings" type="button" aria-pressed="false" hidden>Bindings</button>
+        <button class="pill" id="refresh" type="button">Refresh</button>
+      </div>
+      <div class="status" id="status"></div>
     </div>
 
-    <div class="summary" id="summary"></div>
+    <div class="graph-wrap" id="graph-wrap">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="hint" id="hint">Tap a device to trace its route back to Homey.</div>
+      <div class="zoombar">
+        <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+        <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" id="size" aria-label="Expand the graph">⤡</button>
+      </div>
+    </div>
 
-    <textarea id="dump" readonly spellcheck="false"></textarea>
+    <div class="legend" id="legend"></div>
+
+    <div class="selbar" id="selbar" hidden></div>
+    <div id="panel"></div>
+
+    <details class="raw">
+      <summary>Raw controller data</summary>
+      <textarea id="raw" readonly spellcheck="false"></textarea>
+    </details>
 
     <script type="text/javascript">
-      function onHomeyReady(Homey) {
-        Homey.ready();
+      /* global Homey */
+      'use strict';
 
-        var dumpElement = document.getElementById('dump');
-        var statusElement = document.getElementById('status');
-        var summaryElement = document.getElementById('summary');
-        var refreshElement = document.getElementById('refresh');
-        var copyElement = document.getElementById('copy');
+      var SVG_NS = 'http://www.w3.org/2000/svg';
 
-        function stat(label, value) {
-          var element = document.createElement('div');
-          var strong = document.createElement('b');
-          strong.textContent = value;
-          element.appendChild(strong);
-          element.appendChild(document.createTextNode(label));
-          summaryElement.appendChild(element);
+      var GRADE_LABEL = {
+        good: 'Good', fair: 'Fair', weak: 'Weak', bad: 'Bad', unknown: 'Too little traffic',
+      };
+      var GRADE_ORDER = ['bad', 'weak', 'fair', 'good', 'unknown'];
+
+      // Cluster ids we are likely to meet in a Homey network, for readable endpoints.
+      var CLUSTERS = {
+        0: 'Basic', 1: 'Power Config', 3: 'Identify', 4: 'Groups', 5: 'Scenes',
+        6: 'On/Off', 8: 'Level Control', 10: 'Time', 25: 'OTA Upgrade', 32: 'Poll Control',
+        257: 'Door Lock', 258: 'Window Covering', 512: 'Pump Config', 513: 'Thermostat',
+        514: 'Fan Control', 516: 'Thermostat UI', 768: 'Color Control', 769: 'Ballast Config',
+        1024: 'Illuminance', 1026: 'Temperature', 1027: 'Pressure', 1028: 'Flow',
+        1029: 'Humidity', 1030: 'Occupancy', 1280: 'IAS Zone', 1281: 'IAS ACE',
+        1282: 'IAS WD', 1794: 'Metering', 2820: 'Electrical Meas.', 2821: 'Diagnostics',
+        4096: 'Touchlink', 64513: 'Manufacturer', 64514: 'Manufacturer',
+      };
+
+      // Distance between two hop rings, in layout units. The view is fitted to
+      // the viewport afterwards, so this never has to know the screen size.
+      var RING_GAP = 100;
+
+      var state = {
+        homey: null,
+        graph: null,
+        byAddr: {},
+        selected: null,
+        query: '',
+        showLabels: false,
+        showGhosts: true,
+        showBindings: false,
+        resizeObserver: null,
+      };
+
+      var view = { k: 1, x: 0, y: 0, placed: false };
+      var lastBox = null;
+
+      var svg = document.getElementById('canvas');
+      var wrap = document.getElementById('graph-wrap');
+      var root = el('g');
+      var ringLayer = el('g');
+      var linkLayer = el('g');
+      var nodeLayer = el('g');
+      root.appendChild(ringLayer);
+      root.appendChild(linkLayer);
+      root.appendChild(nodeLayer);
+      svg.appendChild(root);
+
+      function el(name, attrs) {
+        var node = document.createElementNS(SVG_NS, name);
+        if (attrs) Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+        return node;
+      }
+
+      function css(name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      }
+
+      function escapeHtml(str) {
+        return String(str == null ? '' : str).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      // ------------------------------------------------------------- data --
+
+      function load() {
+        setStatus('Loading…');
+        state.homey.api('GET', '/network', null, function (err, graph) {
+          if (err) {
+            setStatus('');
+            document.getElementById('panel').innerHTML =
+              '<p class="error">' + escapeHtml((err && err.message) || err) + '</p>';
+            return;
+          }
+
+          state.graph = graph;
+          state.byAddr = {};
+          graph.nodes.forEach(function (n) { state.byAddr[n.addr] = n; });
+
+          document.getElementById('bindings').hidden = !graph.meta.bindingCount;
+          setStatus(graph.meta.error
+            ? 'Controller reports: ' + graph.meta.error
+            : 'Updated ' + new Date(graph.meta.generatedAt).toLocaleTimeString());
+
+          renderStats();
+          layout();
+          render();
+          fitToView();
+          if (state.selected != null && state.byAddr[state.selected]) select(state.selected);
+          else renderOverview();
+        });
+      }
+
+      function setStatus(text) {
+        document.getElementById('status').textContent = text;
+      }
+
+      function renderStats() {
+        var m = state.graph.meta;
+        var c = state.graph.controller;
+        var items = [
+          ['Devices', m.deviceCount, false],
+          ['Routers', m.routerCount, false],
+          ['End devices', m.endDeviceCount, false],
+          ['Max hops', m.maxHops, false],
+          ['Weak links', m.weakLinkCount, m.weakLinkCount > 0],
+          ['Channel', c.channel == null ? '—' : c.channel, false],
+          ['PAN', c.panId || '—', false],
+        ];
+        if (m.ghostCount) items.push(['Stale', m.ghostCount, false]);
+        if (m.unreachableCount) items.push(['No route', m.unreachableCount, m.unreachableCount > 0]);
+
+        document.getElementById('netstats').innerHTML = items.map(function (it) {
+          return '<div class="netstat"><div class="v' + (it[2] ? ' warn' : '') + '">'
+            + escapeHtml(it[1]) + '</div><div class="k">' + escapeHtml(it[0]) + '</div></div>';
+        }).join('');
+      }
+
+      // ---------------------------------------------------------- helpers --
+
+      function hopColor(n) {
+        if (n.isGhost) return css('--ghost');
+        return css('--h' + Math.min(n.hops == null ? 4 : n.hops, 4));
+      }
+
+      function radius(n) {
+        if (n.isCoordinator) return 15;
+        return 5.5 + Math.min(Math.sqrt(n.descendantCount || 0) * 3.2, 9);
+      }
+
+      function visibleNodes() {
+        return state.graph.nodes.filter(function (n) { return state.showGhosts || !n.isGhost; });
+      }
+
+      function visibleLinks() {
+        return state.graph.links.filter(function (l) {
+          if (l.kind === 'binding' && !state.showBindings) return false;
+          if (!state.showGhosts) {
+            var s = state.byAddr[l.source];
+            var t = state.byAddr[l.target];
+            if ((s && s.isGhost) || (t && t.isGhost)) return false;
+          }
+          return state.byAddr[l.source] && state.byAddr[l.target];
+        });
+      }
+
+      function pathLinkSet(node) {
+        var set = {};
+        if (!node || !node.path) return set;
+        for (var i = 0; i < node.path.length - 1; i++) {
+          set[node.path[i] + '->' + node.path[i + 1]] = true;
+        }
+        return set;
+      }
+
+      function matches(node) {
+        if (!state.query) return false;
+        var q = state.query.toLowerCase();
+        return [node.name, node.modelId, node.manufacturerName, node.ieeeAddr,
+          String(node.addr), '0x' + node.addr.toString(16)]
+          .some(function (v) { return v && String(v).toLowerCase().indexOf(q) !== -1; });
+      }
+
+      function shortName(name) {
+        return name.length > 22 ? name.slice(0, 21) + '…' : name;
+      }
+
+      // ----------------------------------------------------------- layout --
+      /**
+       * A radial tree. The routing table really is a tree — every device has
+       * exactly one parent relay — so children are given an angular slice in
+       * proportion to how many leaves hang off them, and each hop level sits
+       * on its own ring. Deterministic, and never overlaps.
+       *
+       * Positions are in abstract layout units centred on (0,0); fitToView()
+       * maps them onto whatever viewport we actually got.
+       */
+      function layout() {
+        var nodes = state.graph.nodes;
+        var present = {};
+        nodes.forEach(function (n) { present[n.addr] = n; });
+
+        var children = {};
+        var rootNode = null;
+        nodes.forEach(function (n) {
+          if (n.isCoordinator) { rootNode = n; return; }
+          // Devices the controller has no route for are hung off the controller
+          // so they stay visible instead of dropping out of the picture.
+          var parent = (n.parent != null && present[n.parent]) ? n.parent : 0;
+          (children[parent] = children[parent] || []).push(n);
+        });
+        if (!rootNode) return;
+
+        var maxHops = Math.max(state.graph.meta.maxHops, 1);
+        var unrouted = maxHops + 0.5;
+        var ringOf = function (n) {
+          if (n.isCoordinator) return 0;
+          return (n.hops == null ? unrouted : Math.min(n.hops, maxHops)) * RING_GAP;
+        };
+
+        var leafCache = {};
+        function leaves(n) {
+          if (leafCache[n.addr] != null) return leafCache[n.addr];
+          var kids = children[n.addr] || [];
+          leafCache[n.addr] = kids.length
+            ? kids.reduce(function (sum, c) { return sum + leaves(c); }, 0)
+            : 1;
+          return leafCache[n.addr];
         }
 
-        function renderSummary(state) {
-          summaryElement.innerHTML = '';
-          if (!state) return;
+        function assign(n, a0, a1) {
+          n.angle = (a0 + a1) / 2;
+          var r = ringOf(n);
+          n.x = r * Math.cos(n.angle - Math.PI / 2);
+          n.y = r * Math.sin(n.angle - Math.PI / 2);
 
-          var nodes = Object.values(state.nodes || {});
-          var controller = state.controllerState || {};
-          var routers = nodes.filter(function (node) {
-            return node.type === 'router';
-          });
-          var endDevices = nodes.filter(function (node) {
-            return node.type === 'enddevice';
-          });
-
-          stat('nodes', nodes.length);
-          stat('routers', routers.length);
-          stat('end devices', endDevices.length);
-          stat('routes', Object.keys(controller.routes || {}).length);
-          stat('channel', controller.channel != null ? controller.channel : '—');
-          stat('PAN id', controller.panId || '—');
-          stat('ready', state.zigbee_ready ? 'yes' : 'no');
-        }
-
-        function load() {
-          statusElement.textContent = 'Loading…';
-          refreshElement.disabled = true;
-
-          Homey.api('GET', '/state', null, function (err, state) {
-            refreshElement.disabled = false;
-
-            if (err) {
-              summaryElement.innerHTML = '';
-              statusElement.textContent = 'Failed';
-              dumpElement.value = String((err && err.message) || err);
-              return;
-            }
-
-            statusElement.textContent = 'Updated ' + new Date().toLocaleTimeString();
-            dumpElement.value = JSON.stringify(state, null, 2);
-            renderSummary(state);
+          var kids = children[n.addr] || [];
+          var total = kids.reduce(function (sum, c) { return sum + leaves(c); }, 0) || 1;
+          var a = a0;
+          kids.forEach(function (c) {
+            var span = (a1 - a0) * (leaves(c) / total);
+            assign(c, a, a + span);
+            a += span;
           });
         }
 
-        copyElement.addEventListener('click', function () {
-          dumpElement.select();
-          document.execCommand('copy');
-          statusElement.textContent = 'Copied to clipboard';
+        assign(rootNode, 0, 2 * Math.PI);
+        state.rings = { maxHops: maxHops, unrouted: unrouted };
+      }
+
+      // ----------------------------------------------------------- render --
+
+      function render() {
+        var nodes = visibleNodes();
+        var links = visibleLinks();
+
+        // --- rings
+        ringLayer.textContent = '';
+        for (var k = 1; k <= state.rings.maxHops; k++) {
+          ringLayer.appendChild(el('circle', {
+            class: 'ring', cx: 0, cy: 0, r: k * RING_GAP,
+          }));
+          var label = el('text', { class: 'ring-label', x: 0, y: -k * RING_GAP - 6 });
+          label.textContent = k + (k === 1 ? ' hop' : ' hops');
+          ringLayer.appendChild(label);
+        }
+
+        // --- links
+        linkLayer.textContent = '';
+        links.forEach(function (l) {
+          var s = state.byAddr[l.source];
+          var t = state.byAddr[l.target];
+          var line = el('line', {
+            class: 'link ' + l.kind + ' q-' + (l.grade || 'unknown'),
+            x1: s.x, y1: s.y, x2: t.x, y2: t.y,
+            'stroke-width': linkWidth(l),
+          });
+          line.__link = l;
+          linkLayer.appendChild(line);
         });
 
-        refreshElement.addEventListener('click', load);
+        // --- nodes
+        nodeLayer.textContent = '';
+        nodes.forEach(function (n) {
+          var g = el('g', {
+            class: 'node' + (n.isGhost ? ' ghost' : ''),
+            transform: 'translate(' + n.x + ',' + n.y + ')',
+          });
+          var r = radius(n);
+          // Generous invisible hit area — a fingertip is far bigger than a 6px dot.
+          g.appendChild(el('circle', { class: 'hit', r: r + 14, fill: 'transparent' }));
+          g.appendChild(el('circle', { class: 'halo q-' + (n.uplinkGrade || 'unknown'), r: r + 5 }));
+          g.appendChild(el('path', { class: 'body', d: shapeFor(n), fill: hopColor(n) }));
+          var text = el('text', { dy: r + 12 });
+          text.textContent = n.isCoordinator ? n.name : shortName(n.name);
+          g.appendChild(text);
+          g.__node = n;
+          nodeLayer.appendChild(g);
+        });
+
+        renderLegend();
+        applyHighlight();
+      }
+
+      /**
+       * A hop that carries a lot of traffic and fails matters more than a quiet
+       * one, so traffic volume sets the stroke width and quality sets the colour.
+       */
+      function linkWidth(l) {
+        if (l.kind === 'binding') return 1;
+        if (!l.sample) return 1.2;
+        return Math.min(0.8 + Math.log(l.sample + 1) / Math.LN10, 6);
+      }
+
+      function shapeFor(n) {
+        var r = radius(n);
+        if (n.isCoordinator) return starPath(r);
+        if (n.type === 'router') return squarePath(r * 0.92);
+        return circlePath(r);
+      }
+
+      function starPath(r) {
+        var pts = [];
+        for (var i = 0; i < 10; i++) {
+          var rr = i % 2 ? r * 0.45 : r;
+          var a = (Math.PI / 5) * i - Math.PI / 2;
+          pts.push((rr * Math.cos(a)).toFixed(2) + ',' + (rr * Math.sin(a)).toFixed(2));
+        }
+        return 'M' + pts.join('L') + 'Z';
+      }
+
+      function squarePath(s) {
+        return 'M' + (-s) + ',' + (-s) + 'h' + (2 * s) + 'v' + (2 * s) + 'h' + (-2 * s) + 'Z';
+      }
+
+      function circlePath(r) {
+        return 'M' + (-r) + ',0a' + r + ',' + r + ' 0 1,0 ' + (2 * r)
+          + ',0a' + r + ',' + r + ' 0 1,0 ' + (-2 * r) + ',0Z';
+      }
+
+      function renderLegend() {
+        var hops = Math.min(state.rings.maxHops, 4);
+        var parts = ['<span><i class="shape" style="background:' + css('--h0')
+          + ';clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)"></i>Homey</span>'];
+        for (var k = 1; k <= hops; k++) {
+          parts.push('<span><i class="shape circle" style="background:' + css('--h' + k) + '"></i>'
+            + (k === hops && state.rings.maxHops > 4 ? k + '+ hops' : k + (k === 1 ? ' hop' : ' hops')) + '</span>');
+        }
+        parts.push('<span><i class="shape square"></i>Router</span>');
+        parts.push('<span><i class="shape circle"></i>End device</span>');
+        GRADE_ORDER.slice(0, 4).forEach(function (g) {
+          parts.push('<span><i class="q-dot q-' + g + '"></i>' + GRADE_LABEL[g] + ' link</span>');
+        });
+        document.getElementById('legend').innerHTML = parts.join('');
+      }
+
+      // -------------------------------------------------------- highlight --
+
+      function applyHighlight() {
+        var sel = state.selected != null ? state.byAddr[state.selected] : null;
+        var onPath = {};
+        (sel && sel.path ? sel.path : []).forEach(function (a) { onPath[a] = true; });
+        if (sel) onPath[sel.addr] = true;
+        var pathLinks = pathLinkSet(sel);
+
+        Array.prototype.forEach.call(nodeLayer.childNodes, function (g) {
+          var d = g.__node;
+          var isSel = sel && d.addr === sel.addr;
+          var isPath = !!onPath[d.addr];
+          var isMatch = matches(d);
+          g.classList.toggle('selected', !!isSel);
+          g.classList.toggle('onpath', isPath && !isSel);
+          g.classList.toggle('match', isMatch);
+          g.classList.toggle('dim', !!sel && !isPath && !isNeighbor(sel, d));
+          g.querySelector('text').style.display =
+            labelVisible(d, isPath, isMatch) ? '' : 'none';
+        });
+
+        Array.prototype.forEach.call(linkLayer.childNodes, function (line) {
+          var l = line.__link;
+          var on = !!pathLinks[l.source + '->' + l.target];
+          line.classList.toggle('onpath', on);
+          line.classList.toggle('dim', !!sel && !on);
+        });
+      }
+
+      /**
+       * Naming every device at once is unreadable on a phone, so by default
+       * only the nodes that carry traffic are named. Selection, route and
+       * search always win.
+       */
+      function labelVisible(d, isPath, isMatch) {
+        if (state.showLabels || isPath || isMatch) return true;
+        return d.isCoordinator || d.type === 'router';
+      }
+
+      function isNeighbor(sel, d) {
+        return d.parent === sel.addr || sel.parent === d.addr;
+      }
+
+      // ------------------------------------------------------- pan / zoom --
+
+      function applyView() {
+        // One bad number would drop the whole transform and snap the graph
+        // back to the origin, so never hand the DOM a non-finite view.
+        if (!isFinite(view.x) || !isFinite(view.y) || !isFinite(view.k) || view.k <= 0) {
+          fitToView();
+          return;
+        }
+        root.setAttribute('transform',
+          'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
+      }
+
+      function fitToView() {
+        var nodes = visibleNodes().filter(function (n) { return isFinite(n.x); });
+        if (!nodes.length) return;
+        var box = wrap.getBoundingClientRect();
+        var pad = 34;
+        var xs = nodes.map(function (n) { return n.x; });
+        var ys = nodes.map(function (n) { return n.y; });
+        var minX = Math.min.apply(null, xs) - pad;
+        var maxX = Math.max.apply(null, xs) + pad;
+        var minY = Math.min.apply(null, ys) - pad;
+        var maxY = Math.max.apply(null, ys) + pad;
+        view.k = Math.min(2.5, Math.min(box.width / (maxX - minX), box.height / (maxY - minY)));
+        view.x = box.width / 2 - view.k * (minX + maxX) / 2;
+        view.y = box.height / 2 - view.k * (minY + maxY) / 2;
+        view.placed = false;
+        lastBox = { width: box.width, height: box.height };
+        root.setAttribute('transform',
+          'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
+      }
+
+      function zoomBy(factor, cx, cy) {
+        var box = wrap.getBoundingClientRect();
+        var px = cx == null ? box.width / 2 : cx;
+        var py = cy == null ? box.height / 2 : cy;
+        var k = Math.max(0.15, Math.min(6, view.k * factor));
+        var ratio = k / view.k;
+        view.x = px - (px - view.x) * ratio;
+        view.y = py - (py - view.y) * ratio;
+        view.k = k;
+        view.placed = true;
+        applyView();
+      }
+
+      /**
+       * Touch and mouse through one pointer-event path: one pointer pans,
+       * two pinch. `touch-action: none` on the canvas keeps the browser from
+       * taking the gesture for page scrolling, so the page still scrolls
+       * normally everywhere outside the graph.
+       */
+      (function setupGestures() {
+        var pointers = {};
+        var last = null;
+        var moved = 0;
+
+        function points() {
+          return Object.keys(pointers).map(function (id) { return pointers[id]; });
+        }
+
+        function reset() {
+          last = null;
+        }
+
+        svg.addEventListener('pointerdown', function (e) {
+          // No setPointerCapture: Safari drops the capture on the first finger
+          // when a second one lands, which loses half a pinch. Listening on
+          // window keeps every pointer of the gesture instead.
+          pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+          reset();
+          if (Object.keys(pointers).length === 1) moved = 0;
+        });
+
+        window.addEventListener('pointermove', function (e) {
+          if (!pointers[e.pointerId]) return;
+          e.preventDefault();
+          pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+          var pts = points();
+          var box = wrap.getBoundingClientRect();
+
+          if (pts.length === 1) {
+            var p = pts[0];
+            // `last` may still hold pinch state from a moment ago; only pan
+            // when it is a pan anchor, or the arithmetic goes NaN and the
+            // whole transform is dropped.
+            if (last && last.x != null) {
+              view.x += p.x - last.x;
+              view.y += p.y - last.y;
+              moved += Math.abs(p.x - last.x) + Math.abs(p.y - last.y);
+              view.placed = true;
+              applyView();
+            }
+            last = { x: p.x, y: p.y };
+          } else if (pts.length >= 2) {
+            var a = pts[0];
+            var b = pts[1];
+            var dist = Math.hypot(a.x - b.x, a.y - b.y);
+            var mid = { x: (a.x + b.x) / 2 - box.left, y: (a.y + b.y) / 2 - box.top };
+            if (last && last.dist) {
+              zoomBy(dist / last.dist, mid.x, mid.y);
+              view.x += mid.x - last.mid.x;
+              view.y += mid.y - last.mid.y;
+              applyView();
+            }
+            moved = 99;
+            last = { dist: dist, mid: mid };
+          }
+        }, { passive: false });
+
+        function release(e) {
+          if (!pointers[e.pointerId]) return;
+          delete pointers[e.pointerId];
+          reset();
+        }
+
+        window.addEventListener('pointerup', function (e) {
+          if (!pointers[e.pointerId]) return;
+          // A tap, not a drag: treat it as a selection.
+          if (moved < 8) handleTap(e);
+          release(e);
+        });
+        window.addEventListener('pointercancel', release);
+
+        // iOS decides whether a touch scrolls the page from the touch events
+        // themselves, before any pointer event is dispatched — so cancelling
+        // the pointer event does not stop the page from scrolling under a pan.
+        // Cancelling the touch does. The listener has to be non-passive, which
+        // is not the default for touchmove.
+        wrap.addEventListener('touchmove', function (e) {
+          e.preventDefault();
+        }, { passive: false });
+
+        // iOS Safari still offers its own pinch-to-zoom over the canvas even
+        // with touch-action: none, which would zoom the settings view instead
+        // of the graph.
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (name) {
+          svg.addEventListener(name, function (e) { e.preventDefault(); });
+        });
+
+        svg.addEventListener('wheel', function (e) {
+          e.preventDefault();
+          var box = wrap.getBoundingClientRect();
+          zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - box.left, e.clientY - box.top);
+        }, { passive: false });
+      }());
+
+      /** Tapping a link selects the device at its far end — the one it describes. */
+      function handleTap(e) {
+        var target = document.elementFromPoint(e.clientX, e.clientY);
+        var g = target && target.closest ? target.closest('g.node') : null;
+        if (g && g.__node) { select(g.__node.addr); return; }
+        if (target && target.__link) { select(target.__link.target); return; }
+        clearSelection();
+      }
+
+      // ------------------------------------------------------------ panel --
+
+      function select(addr) {
+        state.selected = addr;
+        document.getElementById('hint').style.opacity = 0;
+        applyHighlight();
+        renderSelbar(state.byAddr[addr]);
+        renderPanel(state.byAddr[addr]);
+      }
+
+      function clearSelection() {
+        state.selected = null;
+        document.getElementById('selbar').hidden = true;
+        applyHighlight();
+        renderOverview();
+      }
+
+      /**
+       * A compact summary of the selection sits directly under the graph, so
+       * on a phone you can see what you tapped without scrolling first.
+       */
+      function renderSelbar(n) {
+        var bar = document.getElementById('selbar');
+        if (!n) { bar.hidden = true; return; }
+        bar.hidden = false;
+        bar.innerHTML =
+          '<span class="dot" style="background:' + hopColor(n) + '"></span>'
+          + '<span class="who"><b>' + escapeHtml(n.name) + '</b><small>'
+          + escapeHtml(n.isCoordinator ? 'Controller'
+            : (n.hops == null ? 'No route' : n.hops + (n.hops === 1 ? ' hop' : ' hops'))
+              + ' · ' + n.type
+              + (n.uplinkRate == null ? '' : ' · ' + Math.round(n.uplinkRate * 100) + '% uplink'))
+          + '</small></span>'
+          + '<button type="button" class="pill" id="clearsel">Clear</button>';
+        document.getElementById('clearsel').addEventListener('click', clearSelection);
+      }
+
+      function section(title, body) {
+        return '<div class="section"><h3>' + title + '</h3>' + body + '</div>';
+      }
+
+      function wire(container) {
+        container.querySelectorAll('[data-addr]').forEach(function (element) {
+          element.addEventListener('click', function () {
+            select(Number(element.dataset.addr));
+            wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        });
+      }
+
+      /**
+       * With nothing selected the panel is more useful as a worst-first list of
+       * links than as an empty placeholder — that is where a mesh problem lives.
+       */
+      function renderOverview() {
+        var links = state.graph.links
+          .filter(function (l) { return l.kind === 'route' && l.grade !== 'unknown'; })
+          .sort(function (a, b) { return a.rate - b.rate; })
+          .slice(0, 12);
+
+        var rows = links.map(function (l) {
+          var child = state.byAddr[l.target];
+          var parent = state.byAddr[l.source];
+          if (!child || !parent) return '';
+          return '<li data-addr="' + child.addr + '">'
+            + '<span class="q-dot q-' + l.grade + '"></span>'
+            + '<span class="wl-name">' + escapeHtml(shortName(child.name))
+            + '<span class="wl-via">via ' + escapeHtml(shortName(parent.name)) + ' · '
+            + (l.sample || 0).toLocaleString() + ' tx</span></span>'
+            + '<span class="wl-rate q-text-' + l.grade + '">'
+            + Math.round(l.rate * 100) + '%</span></li>';
+        }).join('');
+
+        var counts = countGrades();
+        var summary = GRADE_ORDER.map(function (g) {
+          return counts[g]
+            ? '<span class="badge"><i class="q-dot q-' + g + '"></i>' + counts[g] + ' '
+              + GRADE_LABEL[g].toLowerCase() + '</span>'
+            : '';
+        }).join('');
+
+        var panel = document.getElementById('panel');
+        panel.innerHTML =
+          '<div class="p-head"><h2>Link quality</h2>'
+          + '<div class="sub">Every hop, ranked worst first. Tap one to trace it.</div></div>'
+          + '<div class="badges">' + summary + '</div>'
+          + section('Weakest links', '<ul class="linklist">' + rows + '</ul>')
+          + section('How this is measured', '<p class="note">Homey reports no LQI or signal '
+            + 'strength. Each device does report how many of its transmissions succeeded, and '
+            + 'because every device has exactly one parent relay, that success rate describes '
+            + 'its link to that parent. A router\'s counters also include traffic it forwards to '
+            + 'its own children, so read a router\'s grade as &ldquo;this branch is struggling&rdquo; '
+            + 'rather than one exact hop. The counters are cumulative since the controller last '
+            + 'started.</p>');
+        wire(panel);
+      }
+
+      function countGrades() {
+        var counts = {};
+        state.graph.links.forEach(function (l) {
+          if (l.kind !== 'route') return;
+          counts[l.grade] = (counts[l.grade] || 0) + 1;
+        });
+        return counts;
+      }
+
+      function renderPanel(n) {
+        if (!n) return;
+        var panel = document.getElementById('panel');
+        var sections = [];
+
+        var badges = ['<span class="badge type">'
+          + (n.isCoordinator ? 'controller' : n.isGhost ? 'unknown device' : n.type) + '</span>'];
+        if (n.hops != null) badges.push('<span class="badge">' + n.hops + (n.hops === 1 ? ' hop' : ' hops') + '</span>');
+        if (n.receiveWhenIdle === false) badges.push('<span class="badge">sleepy</span>');
+        if (n.descendantCount) badges.push('<span class="badge">relays ' + n.descendantCount + '</span>');
+        if (n.isGhost) badges.push('<span class="badge warn">stale route entry</span>');
+        if (!n.hasRoute && !n.isCoordinator && !n.isGhost) badges.push('<span class="badge danger">no route</span>');
+
+        sections.push('<div class="p-head"><h2>' + escapeHtml(n.name) + '</h2><div class="sub">'
+          + escapeHtml([n.manufacturerName, n.modelId].filter(Boolean).join(' · ') || 'Unknown device')
+          + '</div></div><div class="badges">' + badges.join('') + '</div>');
+
+        sections.push(routeSection(n));
+        sections.push(uplinkSection(n));
+        var downlinks = downlinkSection(n);
+        if (downlinks) sections.push(downlinks);
+
+        var rows = [
+          ['Network addr', '<span class="mono">0x' + n.addr.toString(16).padStart(4, '0') + ' (' + n.addr + ')</span>'],
+          ['IEEE addr', n.ieeeAddr ? '<span class="mono">' + escapeHtml(n.ieeeAddr) + '</span>' : '—'],
+          ['Device type', n.isCoordinator ? 'controller' : escapeHtml(n.type)],
+          ['Firmware', escapeHtml(n.swBuildId || '—')],
+          ['Homey app', n.ownerUri ? '<span class="mono">' + escapeHtml(n.ownerUri.replace('homey:app:', '')) + '</span>' : '—'],
+          ['Last seen', n.lastSeen
+            ? new Date(n.lastSeen).toLocaleString() + '<br><span class="mono">' + ago(n.lastSeen) + '</span>'
+            : '—'],
+        ];
+        sections.push(section('Device', '<dl class="kv">' + rows.map(function (r) {
+          return '<dt>' + r[0] + '</dt><dd>' + r[1] + '</dd>';
+        }).join('') + '</dl>'));
+
+        if (n.stats && (n.stats.tx || n.stats.rx)) {
+          var s = n.stats;
+          var pct = s.successRate == null ? null : Math.round(s.successRate * 100);
+          var grade = pct == null ? 'unknown' : pct >= 95 ? 'good' : pct >= 85 ? 'fair' : pct >= 70 ? 'weak' : 'bad';
+          sections.push(section('Radio statistics',
+            '<dl class="kv">'
+            + '<dt>TX success</dt><dd>' + (pct == null ? '—' : pct + '%')
+            + '<div class="bar q-bar-' + grade + '"><span style="width:' + (pct || 0) + '%"></span></div></dd>'
+            + '<dt>TX total</dt><dd>' + s.tx.toLocaleString() + '</dd>'
+            + '<dt>TX errors</dt><dd>' + s.txError.toLocaleString() + '</dd>'
+            + '<dt>RX total</dt><dd>' + s.rx.toLocaleString() + '</dd>'
+            + '</dl>'));
+        }
+
+        if (n.capabilities) {
+          var caps = Object.keys(n.capabilities)
+            .filter(function (k) { return n.capabilities[k]; })
+            .map(function (k) { return '<span class="chip">' + escapeHtml(k) + '</span>'; });
+          sections.push(section('Capabilities',
+            '<div class="chips">' + (caps.join('') || '<span class="chip">none</span>') + '</div>'));
+        }
+
+        if (n.endpoints && n.endpoints.length) {
+          sections.push(section('Endpoints', n.endpoints.map(function (ep) {
+            return '<div class="ep"><h4>Endpoint ' + ep.endpointId + ' · profile ' + ep.profileId
+              + ' · device ' + ep.deviceId + '</h4>'
+              + '<div class="ep-label">Input clusters</div>'
+              + '<div class="chips">' + clusterChips(ep.inputClusters) + '</div>'
+              + '<div class="ep-label">Output clusters</div>'
+              + '<div class="chips">' + clusterChips(ep.outputClusters) + '</div></div>';
+          }).join('')));
+        }
+
+        if (n.bindings && Object.keys(n.bindings).length) {
+          sections.push(section('Bindings', Object.keys(n.bindings).map(function (ieee) {
+            var target = state.graph.nodes.filter(function (x) { return x.ieeeAddr === ieee; })[0];
+            var clusters = n.bindings[ieee].map(function (entry) {
+              var parts = String(entry).split(':');
+              var cid = Number(parts[1]);
+              return '<span class="chip">ep' + escapeHtml(parts[0]) + ' · '
+                + escapeHtml(CLUSTERS[cid] || 'cluster ' + parts[1]) + '</span>';
+            }).join('');
+            return '<div class="ep"><h4>→ ' + escapeHtml(target ? target.name : ieee) + '</h4>'
+              + '<div class="chips">' + clusters + '</div></div>';
+          }).join('')));
+        }
+
+        panel.innerHTML = sections.join('');
+        wire(panel);
+      }
+
+      /** How well this device reaches its parent relay. */
+      function uplinkSection(n) {
+        if (n.isCoordinator || n.parent == null) return '';
+        var link = state.graph.links.filter(function (l) {
+          return l.kind === 'route' && l.target === n.addr;
+        })[0];
+        if (!link) return '';
+        var parent = state.byAddr[n.parent];
+        if (!parent) return '';
+        var pct = link.rate == null ? null : Math.round(link.rate * 100);
+
+        return section('Link to parent',
+          '<div class="qhead"><span class="q-dot q-' + link.grade + '"></span>'
+          + '<span class="q-text-' + link.grade + '">' + GRADE_LABEL[link.grade] + '</span>'
+          + (pct == null ? '' : '<span class="qpct">' + pct + '%</span>') + '</div>'
+          + '<div class="bar q-bar-' + link.grade + '"><span style="width:' + (pct || 0) + '%"></span></div>'
+          + '<dl class="kv">'
+          + '<dt>Parent</dt><dd class="linkish" data-addr="' + parent.addr + '">' + escapeHtml(parent.name) + '</dd>'
+          + '<dt>Transmissions</dt><dd>' + (link.sample || 0).toLocaleString() + '</dd>'
+          + '<dt>Failed</dt><dd>' + (link.txError || 0).toLocaleString() + '</dd>'
+          + '</dl>'
+          + (link.grade === 'unknown'
+            ? '<p class="note">Too few transmissions to judge this link yet.</p>' : ''));
+      }
+
+      /** How well the devices hanging off this one are doing. */
+      function downlinkSection(n) {
+        var links = state.graph.links
+          .filter(function (l) { return l.kind === 'route' && l.source === n.addr; })
+          .sort(function (a, b) { return (a.rate == null ? 2 : a.rate) - (b.rate == null ? 2 : b.rate); });
+        if (!links.length) return '';
+
+        var rows = links.map(function (l) {
+          var child = state.byAddr[l.target];
+          if (!child) return '';
+          return '<li data-addr="' + child.addr + '">'
+            + '<span class="q-dot q-' + l.grade + '"></span>'
+            + '<span class="wl-name">' + escapeHtml(shortName(child.name)) + '</span>'
+            + '<span class="wl-rate q-text-' + l.grade + '">'
+            + (l.rate == null ? '—' : Math.round(l.rate * 100) + '%') + '</span></li>';
+        }).join('');
+        return section('Links to children (' + links.length + ')',
+          '<ul class="linklist">' + rows + '</ul>');
+      }
+
+      function routeSection(n) {
+        if (n.isCoordinator) {
+          var c = state.graph.controller;
+          return section('Controller',
+            '<dl class="kv">'
+            + '<dt>Channel</dt><dd>' + escapeHtml(c.channel == null ? '—' : c.channel) + '</dd>'
+            + '<dt>PAN ID</dt><dd class="mono">' + escapeHtml(c.panId || '—') + '</dd>'
+            + '<dt>Ext. PAN ID</dt><dd class="mono">' + escapeHtml(c.extendedPanId || '—') + '</dd>'
+            + '<dt>IEEE addr</dt><dd class="mono">' + escapeHtml(c.ieeeAddress || '—') + '</dd>'
+            + '<dt>Firmware</dt><dd>' + escapeHtml(c.softwareVersion || '—') + '</dd>'
+            + '<dt>State</dt><dd>' + escapeHtml(c.currentCommand || '—') + '</dd>'
+            + '</dl>');
+        }
+        if (!n.path) {
+          return section('Route to Homey', '<p class="note">No route in the controller\'s routing '
+            + 'table — the device is unreachable, or has not been contacted since the last restart.</p>');
+        }
+        var items = n.path.map(function (addr, i) {
+          var hop = state.byAddr[addr];
+          var color = hop ? hopColor(hop) : css('--ghost');
+          var grade = i === 0 ? null : (hop && hop.uplinkGrade) || 'unknown';
+          var rate = (i === 0 || !hop || hop.uplinkRate == null)
+            ? '' : Math.round(hop.uplinkRate * 100) + '%';
+          return '<li>'
+            + '<span class="step" style="background:' + color + '">' + (i === 0 ? 'H' : i) + '</span>'
+            + '<span class="rname linkish" data-addr="' + addr + '">'
+            + escapeHtml(hop ? shortName(hop.name) : '0x' + addr.toString(16)) + '</span>'
+            + (grade ? '<span class="wl-rate q-text-' + grade + '">' + rate + '</span>' : '')
+            + '<span class="raddr">0x' + addr.toString(16) + '</span>'
+            + '</li>';
+        });
+        return section('Route to Homey (' + n.hops + (n.hops === 1 ? ' hop' : ' hops') + ')',
+          '<ul class="route">' + items.join('') + '</ul>');
+      }
+
+      function clusterChips(ids) {
+        if (!ids || !ids.length) return '<span class="chip">none</span>';
+        return ids.map(function (id) {
+          return '<span class="chip">' + escapeHtml(CLUSTERS[id] || id) + '</span>';
+        }).join('');
+      }
+
+      function ago(ts) {
+        var mins = Math.round((Date.now() - ts) / 60000);
+        if (mins < 60) return mins + ' min ago';
+        var hours = Math.round(mins / 60);
+        if (hours < 48) return hours + ' h ago';
+        return Math.round(hours / 24) + ' days ago';
+      }
+
+      // ------------------------------------------------------ interaction --
+
+      /**
+       * The canvas resizes for reasons that have nothing to do with the user
+       * wanting a new view — an iPhone hiding its address bar, or the keyboard
+       * opening over the search box. Re-fitting on every one of those threw
+       * away whatever the user had just panned or pinched to, so once the view
+       * has been placed by hand it is only re-centred on the size change, never
+       * reset.
+       */
+      var resizeTimer = null;
+
+      function scheduleResize() {
+        if (resizeTimer) return;
+        resizeTimer = setTimeout(function () {
+          resizeTimer = null;
+          onResize();
+        }, 120);
+      }
+
+      function onResize() {
+        if (!state.graph) return;
+        var box = wrap.getBoundingClientRect();
+        if (!box.width || !box.height) return;
+        if (!view.placed) { fitToView(); return; }
+        if (lastBox) {
+          view.x += (box.width - lastBox.width) / 2;
+          view.y += (box.height - lastBox.height) / 2;
+          applyView();
+        }
+        lastBox = { width: box.width, height: box.height };
+      }
+
+      function toggle(id, key, after) {
+        var button = document.getElementById(id);
+        button.addEventListener('click', function () {
+          state[key] = !state[key];
+          button.setAttribute('aria-pressed', String(state[key]));
+          after();
+        });
+      }
+
+      function onHomeyReady(homeyInstance) {
+        state.homey = homeyInstance;
+        homeyInstance.ready();
+
+        document.getElementById('search').addEventListener('input', function (e) {
+          state.query = e.target.value.trim();
+          if (state.graph) applyHighlight();
+        });
+
+        toggle('labels', 'showLabels', applyHighlight);
+        toggle('ghosts', 'showGhosts', function () { render(); fitToView(); });
+        toggle('bindings', 'showBindings', function () { render(); });
+
+        document.getElementById('fit').addEventListener('click', fitToView);
+        document.getElementById('refresh').addEventListener('click', load);
+        document.getElementById('zoom-in').addEventListener('click', function () { zoomBy(1.3); });
+        document.getElementById('zoom-out').addEventListener('click', function () { zoomBy(1 / 1.3); });
+
+        // Two ways in, because the toolbar pill scrolls out of reach once the
+        // graph is expanded — the one in the zoom bar never does.
+        var expand = document.getElementById('expand');
+        var size = document.getElementById('size');
+
+        function toggleSize() {
+          var tall = wrap.classList.toggle('tall');
+          expand.setAttribute('aria-pressed', String(tall));
+          expand.textContent = tall ? 'Shrink' : 'Expand';
+          size.textContent = tall ? '⤢' : '⤡';
+          size.setAttribute('aria-label', tall ? 'Shrink the graph' : 'Expand the graph');
+          fitToView();
+          if (tall) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        expand.addEventListener('click', toggleSize);
+        size.addEventListener('click', toggleSize);
+
+        var raw = document.querySelector('.raw');
+        raw.addEventListener('toggle', function () {
+          var box = document.getElementById('raw');
+          if (!raw.open || box.value) return;
+          box.value = 'Loading…';
+          state.homey.api('GET', '/state', null, function (err, dump) {
+            box.value = err
+              ? String((err && err.message) || err)
+              : JSON.stringify(dump, null, 2);
+          });
+        });
+
+        // Several sources, because no single one is reliable everywhere: iOS
+        // reports an address bar appearing on visualViewport, and an unheld
+        // ResizeObserver can be collected before it ever fires. The handler is
+        // idempotent, so overlapping notifications are harmless.
+        if (window.ResizeObserver) {
+          state.resizeObserver = new ResizeObserver(scheduleResize);
+          state.resizeObserver.observe(wrap);
+        }
+        window.addEventListener('resize', scheduleResize);
+        window.addEventListener('orientationchange', scheduleResize);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', scheduleResize);
+        }
 
         load();
       }
+
+      window.onHomeyReady = onHomeyReady;
     </script>
   </body>
 </html>

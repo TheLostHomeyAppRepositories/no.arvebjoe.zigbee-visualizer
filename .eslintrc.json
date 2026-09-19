@@ -1,3 +1,16 @@
 {
-  "extends": "athom/homey-app"
+  "extends": "athom/homey-app",
+  "settings": {
+    "import/resolver": {
+      "node": {
+        "extensions": [".js", ".ts", ".json"]
+      }
+    },
+    "node": {
+      "tryExtensions": [".js", ".ts", ".json", ".node"]
+    }
+  },
+  "rules": {
+    "import/extensions": ["error", "ignorePackages", { "js": "never", "ts": "never" }]
+  }
 }
