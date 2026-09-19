@@ -1,0 +1,18 @@
+{
+  "name": "no.arvebjoe.zigbee-visualizer",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint --ext .js,.ts --ignore-path .gitignore ."
+  },
+  "devDependencies": {
+    "@tsconfig/node16": "^16.1.9",
+    "@types/homey": "npm:homey-apps-sdk-v3-types@^0.3.12",
+    "@types/node": "^26.6.2",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
+    "eslint": "^8.57.1",
+    "eslint-config-athom": "^4.0.2",
+    "typescript": "^6.0.3"
+  }
+}
