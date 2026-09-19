@@ -2,13 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: empty scaffold
+## Status: working scaffold, no features yet
 
-This directory currently contains **no source code** — only the build/lint config (`package.json`,
-`tsconfig.json`, `.eslintrc.json`, `.gitignore`) and an empty Homey app directory skeleton. Treat almost any task here as greenfield: there is no existing code
-style, module layout, or test setup to match yet. Verify the tree before assuming a file exists.
+The app builds and validates (`homey app build` passes at level `debug`), but `app.ts` is still the stock
+template and there are no drivers. Treat feature work here as greenfield.
 
-It is also **not a git repository** (no `.git`). Don't run git commands expecting history.
+### `homey app create` is broken upstream — do not re-run it
+
+The scaffold arrived half-created because **Homey CLI 4.5.0 cannot create an app with ESLint enabled**.
+`App.create()` runs `npm install --save-dev eslint@^7.32.0 eslint-config-athom`, but `eslint-config-athom@4`
+declares `peerDependencies: eslint >=8.57.1 <9.0.0`. npm fails with ERESOLVE and creation aborts partway,
+leaving only `package.json` plus empty directories — every file after that step is silently missing
+(`app.json`, `.homeycompose/app.json`, `app.ts`, `assets/icon.svg`, `locales/en.json`, `README.txt`,
+`.homeychangelog.json`, LICENSE/CODE_OF_CONDUCT/CONTRIBUTING). Without `app.json` the CLI cannot read a
+manifest, so `homey app build` and `homey app run` both fail.
+
+Reproduced deterministically on 2026-09-19 with CLI 4.5.0. If you ever need to scaffold again (a fresh app,
+or to recover a file), **answer `No` to "Use ESLint?"** — creation then completes — and wire up ESLint
+afterwards as this repo does. The missing files here were recovered exactly that way.
 
 ## Commands
 
@@ -17,9 +28,8 @@ npm run build    # tsc -> .homeybuild/
 npm run lint     # eslint, Athom's Homey-app ruleset, type-aware
 ```
 
-Both commands **error on the current empty tree** (`TS18003: No inputs were found` /
-`No files matching the pattern "."`). That is the absence of source files, not a broken setup — both work
-as soon as the first `.ts`/`.js` file exists. No test script or framework is configured.
+The real workflow is the Homey CLI, which runs the TS build itself — prefer `homey app build` /
+`homey app run` over `npm run build`. No test script or framework is configured.
 
 ### TypeScript setup
 
@@ -73,15 +83,29 @@ This is an [Athom Homey](https://homey.app) app (`homey app create` layout). The
 package name, `no.arvebjoe.zigbee-visualizer` — Homey app ids are reverse-DNS and must stay in sync with
 the `id` in the app manifest.
 
-The empty directories are Homey's **compose** layout. `homey app build` merges them into the generated
+The (still mostly empty) directories are Homey's **compose** layout. `homey app build` merges them into the generated
 `app.json`; you author the pieces, not `app.json` directly:
 
 - `.homeycompose/` — app-level fragments: `capabilities/`, `flow/{triggers,conditions,actions}/`,
   `discovery/`, `locales/`, `signals/{433,868,ir}/`, `screensavers/`, and `drivers/{settings,templates}/`
   for fragments shared across drivers.
 - `drivers/<id>/` — per-driver `driver.compose.json`, `driver.js`/`device.js`, `assets/`, `pair/`.
-- `assets/images/` — app icon and store images.
+- `assets/` — `icon.svg` (present) and `images/` for store artwork (empty, see above).
 - `locales/` — `en.json` and other translation files.
+
+## The app manifest
+
+`.homeycompose/app.json` is the **source** manifest; the root `app.json` is generated from it by
+`homey app build` and carries a `_comment` saying so. Edit the compose one — root `app.json` edits get
+overwritten. Both are committed, which is the Homey convention.
+
+`author` was filled in automatically from the logged-in Athom profile during scaffolding.
+
+**Publish is blocked until the store images exist.** `homey app validate --level publish` fails with
+`Filepath does not exist: /assets/images/small.png`. The manifest references `small.png`, `large.png` and
+`xlarge.png` under `assets/images/`, but `homey app create` never generates them — supplying artwork is a
+manual step. `homey app run` and level `debug` validation work fine without them, so this only matters at
+publish time.
 
 ## Related project
 
