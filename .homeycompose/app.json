@@ -1,6 +1,6 @@
 {
   "id": "no.arvebjoe.zigbee-visualizer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "compatibility": ">=12.4.0",
   "sdk": 3,
   "brandColor": "#E8951F",
@@ -49,5 +49,10 @@
   "author": {
     "name": "Arve Bjørnerud",
     "email": "arvebjoe@hotmail.com"
-  }
+  },
+  "source": "https://github.com/arvebjoe/no.arvebjoe.zigbee-visualizer",
+  "bugs": {
+    "url": "https://github.com/arvebjoe/no.arvebjoe.zigbee-visualizer/issues"
+  },
+  "support": "https://github.com/arvebjoe/no.arvebjoe.zigbee-visualizer/issues"
 }

@@ -1,5 +1,8 @@
 {
   "1.0.0": {
     "en": "First version!"
+  },
+  "1.0.1": {
+    "en": "Added the network map: every device drawn as a star joined to the ones it relays through, the route each takes back to Homey, and a quality grade on every hop with the weakest links listed first."
   }
 }
