@@ -1,6 +1,1 @@
-{
-  "settings": {
-    "title": "Zigbee network",
-    "subtitle": "Every device, the links between them, and the route Homey uses to reach each one."
-  }
-}
+{}

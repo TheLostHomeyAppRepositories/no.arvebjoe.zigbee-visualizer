@@ -6,43 +6,52 @@
     <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
     <style>
       /* ---------------------------------------------------------- theme --
-         The page follows the viewer's theme. Hop and quality colours are
-         defined twice so they stay legible on either ground. */
+         The palette is picked at runtime from the background Homey actually
+         renders behind us (see pickTheme), because the app's own dark mode is
+         a setting inside Homey and does not have to agree with the operating
+         system. `prefers-color-scheme` is only the guess used until then.
+
+         The page paints its own background to match. Without one, the text
+         colour came from the OS while the ground came from Homey, and when
+         those disagreed the result was white on white. */
       :root {
         --canvas: #f2f4f7;
         --canvas-line: #dde2e9;
         --surface: #ffffff;
-        --border: #dfe3e8;
-        --text: #1f2933;
-        --text-dim: #6b7684;
-        --accent: #0f9b77;
-        --warn: #9a6700;
-        --danger: #cf222e;
+        --page-bg: #ffffff;
+        --border: #d3d9e0;
+        --text: #16202b;
+        --text-dim: #3d4752;
+        --accent: #0b7d60;
+        --warn: #8a5a00;
+        --danger: #c0272d;
 
-        --h0: #1f2933;
-        --h1: #0f9b77;
-        --h2: #2563eb;
-        --h3: #7c3aed;
-        --h4: #db2777;
-        --ghost: #98a1ac;
+        --h0: #16202b;
+        --h1: #0b7d60;
+        --h2: #1d4ed8;
+        --h3: #6d28d9;
+        --h4: #be185d;
+        --ghost: #7c8794;
 
-        --q-good: #1a7f37;
-        --q-fair: #9a6700;
-        --q-weak: #bc4c00;
-        --q-bad: #cf222e;
-        --q-unknown: #a0a8b4;
+        --q-good: #15803d;
+        --q-fair: #8a5a00;
+        --q-weak: #b03a00;
+        --q-bad: #c0272d;
+        --q-unknown: #6b7480;
 
-        --link-base: #c2c9d2;
+        --link-base: #b6bfca;
       }
 
+      /* Before the probe runs, follow the system. */
       @media (prefers-color-scheme: dark) {
-        :root {
+        :root:not([data-theme="light"]) {
           --canvas: #0e1116;
           --canvas-line: #1e2633;
           --surface: #161b22;
-          --border: #262d3a;
-          --text: #e6edf3;
-          --text-dim: #8b98a9;
+          --page-bg: #0e1116;
+          --border: #30394a;
+          --text: #e9eff5;
+          --text-dim: #ced8e2;
           --accent: #4dd4ac;
           --warn: #e3b341;
           --danger: #f85149;
@@ -52,64 +61,68 @@
           --h2: #58a6ff;
           --h3: #bc8cff;
           --h4: #ff8fab;
-          --ghost: #6e7681;
+          --ghost: #8b96a5;
 
-          --q-good: #3fb950;
-          --q-fair: #d6b13a;
-          --q-weak: #e8883a;
-          --q-bad: #f4544c;
-          --q-unknown: #4a5361;
+          --q-good: #56d364;
+          --q-fair: #e3b341;
+          --q-weak: #f0883e;
+          --q-bad: #ff7b72;
+          --q-unknown: #7d8797;
 
-          --link-base: #303948;
+          --link-base: #3b465a;
         }
+      }
+
+      /* After it runs, follow Homey. */
+      :root[data-theme="dark"] {
+          --canvas: #0e1116;
+          --canvas-line: #1e2633;
+          --surface: #161b22;
+          --page-bg: #0e1116;
+          --border: #30394a;
+          --text: #e9eff5;
+          --text-dim: #ced8e2;
+          --accent: #4dd4ac;
+          --warn: #e3b341;
+          --danger: #f85149;
+
+          --h0: #f0f6fc;
+          --h1: #4dd4ac;
+          --h2: #58a6ff;
+          --h3: #bc8cff;
+          --h4: #ff8fab;
+          --ghost: #8b96a5;
+
+          --q-good: #56d364;
+          --q-fair: #e3b341;
+          --q-weak: #f0883e;
+          --q-bad: #ff7b72;
+          --q-unknown: #7d8797;
+
+          --link-base: #3b465a;
       }
 
       * { box-sizing: border-box; }
       html, body { overflow-x: hidden; }
       body { color: var(--text); }
-
-      /* ----------------------------------------------------- stat strip --
-         Horizontally scrollable so a narrow phone never wraps it into a
-         three-line block above the graph. */
-      .netstats {
-        display: flex;
-        gap: 18px;
-        overflow-x: auto;
-        padding: 2px 0 8px;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-      }
-      .netstats::-webkit-scrollbar { display: none; }
-      .netstat { flex: 0 0 auto; }
-      .netstat .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
-      .netstat .k { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; }
-      .netstat .v.warn { color: var(--q-weak); }
+      /* Added once the probe has read Homey's background, so that reading is
+         not of our own paint. */
+      body.themed { background: var(--page-bg); }
 
       /* -------------------------------------------------------- toolbar -- */
-      .toolbar { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-      .toolbar input[type="search"] {
-        width: 100%;
+      .toolbar { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 12px; }
+      .chips-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .pill {
+        /* Grow to share out the row, but never shrink below the label —
+           a button too narrow for its text wraps to the next row instead. */
+        flex: 1 0 auto;
+        font-weight: 500;
         background: var(--surface);
         border: 1px solid var(--border);
         color: var(--text);
-        border-radius: 8px;
-        padding: 9px 12px;
-        font-size: 14px;
-        outline: none;
-        -webkit-appearance: none;
-      }
-      .toolbar input[type="search"]:focus { border-color: var(--accent); }
-
-      .chips-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-      .chips-row::-webkit-scrollbar { display: none; }
-      .pill {
-        flex: 0 0 auto;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        color: var(--text-dim);
         border-radius: 20px;
-        padding: 7px 13px;
-        font-size: 12px;
+        padding: 10px 15px;
+        font-size: 15px;
         line-height: 1;
         cursor: pointer;
         white-space: nowrap;
@@ -149,12 +162,13 @@
       #canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 
       .hint {
+        font-weight: 500;
         position: absolute;
         left: 50%;
         bottom: 10px;
         transform: translateX(-50%);
-        font-size: 11px;
-        color: var(--text-dim);
+        font-size: 14px;
+        color: var(--text);
         background: var(--surface);
         border: 1px solid var(--border);
         border-radius: 20px;
@@ -173,18 +187,9 @@
         font-size: 17px; line-height: 1; cursor: pointer;
       }
 
-      /* Below the graph, never over it — the mesh keeps the whole canvas. */
-      .legend {
-        display: flex; flex-wrap: wrap; gap: 5px 12px;
-        font-size: 10px; color: var(--text-dim);
-        padding: 9px 0 0;
-        line-height: 1.4;
-      }
-      .legend span { display: flex; align-items: center; gap: 4px; }
-
       /* --------------------------------------------------- graph shapes -- */
       .ring { fill: none; stroke: var(--canvas-line); stroke-width: 1px; }
-      .ring-label { fill: var(--text-dim); font-size: 9px; text-anchor: middle; opacity: .7; letter-spacing: .6px; }
+      .ring-label { fill: var(--text); font-size: 11px; text-anchor: middle; opacity: .55; letter-spacing: .6px; }
 
       .link { stroke: var(--link-base); fill: none; stroke-linecap: round; }
       .link.q-good { stroke: var(--q-good); stroke-opacity: .55; }
@@ -205,67 +210,53 @@
       .node.dim { opacity: .22; }
       .node.selected .body { stroke: var(--text); stroke-width: 2.5px; }
       .node.onpath .body { stroke: var(--accent); stroke-width: 2px; }
-      .node.match .body { stroke: var(--warn); stroke-width: 2.5px; }
       .node text {
-        font-size: 10px; fill: var(--text-dim); text-anchor: middle;
+        font-size: 12px; fill: var(--text); text-anchor: middle;
         pointer-events: none; paint-order: stroke;
         stroke: var(--canvas); stroke-width: 3px; stroke-linejoin: round;
       }
       .node.selected text, .node.onpath text { fill: var(--text); }
       .node.selected text { font-weight: 600; }
 
-      /* ------------------------------------------------- selection bar -- */
-      .selbar {
-        display: flex; align-items: center; gap: 10px;
-        padding: 10px 0 2px;
-        border-bottom: 1px solid var(--border);
-        margin-bottom: 14px;
-      }
-      .selbar .dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
-      .selbar .who { flex: 1 1 auto; min-width: 0; }
-      .selbar .who b { display: block; font-size: 14px; line-height: 1.3; }
-      .selbar .who small { color: var(--text-dim); font-size: 11px; }
-      .selbar button { width: auto; margin: 0; padding: 6px 12px; font-size: 12px; flex: 0 0 auto; }
-
       /* -------------------------------------------------- detail panel -- */
       .section { margin-bottom: 22px; }
       .section h3 {
-        font-size: 10px; text-transform: uppercase; letter-spacing: .8px;
-        color: var(--text-dim); margin: 0 0 8px; font-weight: 600;
+        font-size: 14px; text-transform: uppercase; letter-spacing: .8px;
+        color: var(--text); margin: 0 0 11px; font-weight: 700;
       }
-      .p-head h2 { font-size: 17px; margin: 0 0 4px; line-height: 1.3; }
-      .p-head .sub { font-size: 12px; color: var(--text-dim); }
+      .p-head h2 { font-size: 24px; margin: 0 0 5px; line-height: 1.25; }
+      .p-head .sub { font-size: 16px; color: var(--text); }
       .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 18px; }
       .badge {
         display: flex; align-items: center; gap: 5px;
-        font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
-        padding: 4px 9px; border-radius: 20px;
-        border: 1px solid var(--border); color: var(--text-dim);
+        font-size: 13px; text-transform: uppercase; letter-spacing: .5px;
+        padding: 6px 12px; border-radius: 20px;
+        border: 1px solid var(--border); color: var(--text);
       }
       .badge.type { color: var(--accent); border-color: var(--accent); }
       .badge.warn { color: var(--warn); border-color: var(--warn); }
       .badge.danger { color: var(--danger); border-color: var(--danger); }
 
-      .kv { display: grid; grid-template-columns: minmax(96px, 34%) 1fr; gap: 6px 12px; font-size: 13px; margin: 0; }
-      .kv dt { color: var(--text-dim); }
+      .kv { display: grid; grid-template-columns: minmax(112px, 36%) 1fr; gap: 10px 12px; font-size: 16px; margin: 0; }
+      .kv dt { color: var(--text); opacity: .75; }
       .kv dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; }
 
       .route { list-style: none; margin: 0; padding: 0; }
-      .route li { display: flex; align-items: center; gap: 10px; padding: 9px 0; font-size: 13px; }
+      .route li { display: flex; align-items: center; gap: 11px; padding: 13px 0; font-size: 16px; }
       .route li + li { border-top: 1px solid var(--border); }
       .route .step {
-        width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
-        display: grid; place-items: center; font-size: 10px; font-weight: 700; color: var(--canvas);
+        width: 28px; height: 28px; border-radius: 50%; flex: 0 0 auto;
+        display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--canvas);
       }
       .route .rname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .route .raddr { color: var(--text-dim); font-family: ui-monospace, Menlo, monospace; font-size: 10px; flex: 0 0 auto; }
+      .route .raddr { color: var(--text); opacity: .7; font-family: ui-monospace, Menlo, monospace; font-size: 13px; flex: 0 0 auto; }
 
-      .linklist { list-style: none; margin: 0; padding: 0; font-size: 13px; }
-      .linklist li { display: flex; align-items: center; gap: 9px; padding: 9px 0; cursor: pointer; }
+      .linklist { list-style: none; margin: 0; padding: 0; font-size: 16px; }
+      .linklist li { display: flex; align-items: center; gap: 11px; padding: 13px 0; cursor: pointer; }
       .linklist li + li { border-top: 1px solid var(--border); }
       .wl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-      .wl-via { color: var(--text-dim); font-size: 11px; display: block; }
+      .wl-via { color: var(--text); opacity: .75; font-size: 14px; display: block; margin-top: 3px; }
       .wl-rate { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 600; }
 
       .bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin-top: 5px; }
@@ -276,18 +267,18 @@
       .bar.q-bar-bad > span { background: var(--q-bad); }
       .bar.q-bar-unknown > span { background: var(--q-unknown); }
 
-      .qhead { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-      .qhead .qpct { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-dim); font-weight: 500; }
+      .qhead { display: flex; align-items: center; gap: 9px; font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+      .qhead .qpct { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
 
       .chips { display: flex; flex-wrap: wrap; gap: 5px; }
       .chip {
-        font-size: 11px; padding: 3px 7px; border-radius: 5px;
-        background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+        font-size: 14px; padding: 5px 9px; border-radius: 6px;
+        background: var(--surface); border: 1px solid var(--border); color: var(--text);
         font-family: ui-monospace, Menlo, monospace;
       }
       .ep { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
-      .ep h4 { margin: 0 0 6px; font-size: 12px; color: var(--text); font-weight: 600; }
-      .ep .ep-label { font-size: 10px; color: var(--text-dim); margin: 8px 0 4px; text-transform: uppercase; letter-spacing: .5px; }
+      .ep h4 { margin: 0 0 8px; font-size: 15px; color: var(--text); font-weight: 600; }
+      .ep .ep-label { font-size: 13px; color: var(--text); opacity: .75; margin: 10px 0 5px; text-transform: uppercase; letter-spacing: .5px; }
 
       .q-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
       .q-dot.q-good { background: var(--q-good); }
@@ -299,15 +290,11 @@
       .q-text-fair { color: var(--q-fair); }
       .q-text-weak { color: var(--q-weak); }
       .q-text-bad { color: var(--q-bad); }
-      .q-text-unknown { color: var(--text-dim); }
-
-      .shape { width: 10px; height: 10px; display: inline-block; background: var(--text-dim); }
-      .shape.circle { border-radius: 50%; }
-      .shape.square { border-radius: 2px; }
+      .q-text-unknown { color: var(--text); opacity: .75; }
 
       .raw { margin: 26px 0 12px; }
       .raw summary {
-        font-size: 12px; color: var(--text-dim); cursor: pointer;
+        font-size: 16px; color: var(--text); cursor: pointer;
         padding: 10px 0; border-top: 1px solid var(--border);
       }
       .raw textarea {
@@ -315,35 +302,25 @@
         background: var(--surface); color: var(--text);
         border: 1px solid var(--border); border-radius: 8px; padding: 10px;
         font-family: ui-monospace, Menlo, Consolas, monospace;
-        font-size: 11px; line-height: 1.45; white-space: pre; resize: vertical;
+        font-size: 12px; line-height: 1.45; white-space: pre; resize: vertical;
       }
 
-      .note { font-size: 12px; line-height: 1.65; color: var(--text-dim); margin: 0; }
+      .note { font-size: 15px; line-height: 1.6; color: var(--text); margin: 0; }
       .linkish { cursor: pointer; color: var(--accent); }
-      .status { font-size: 12px; color: var(--text-dim); min-height: 16px; }
+      .status { font-size: 17px; color: var(--text); min-height: 20px; }
       .error { color: var(--danger); font-size: 13px; }
     </style>
   </head>
 
   <body>
-    <header class="homey-header">
-      <h1 class="homey-title" data-i18n="settings.title">Zigbee network</h1>
-      <p class="homey-subtitle" data-i18n="settings.subtitle">
-        Every device, the links between them, and the route Homey uses to reach each one.
-      </p>
-    </header>
-
-    <div class="netstats" id="netstats"></div>
-
     <div class="toolbar">
-      <input id="search" type="search" placeholder="Search name, model, address…" autocomplete="off" />
       <div class="chips-row">
         <button class="pill" id="fit" type="button">Fit</button>
         <button class="pill" id="expand" type="button" aria-pressed="false">Expand</button>
         <button class="pill" id="labels" type="button" aria-pressed="false">All labels</button>
         <button class="pill" id="ghosts" type="button" aria-pressed="true">Stale routes</button>
         <button class="pill" id="bindings" type="button" aria-pressed="false" hidden>Bindings</button>
-        <button class="pill" id="refresh" type="button">Refresh</button>
+        <button class="pill" id="reload" type="button">Reload</button>
       </div>
       <div class="status" id="status"></div>
     </div>
@@ -358,9 +335,6 @@
       </div>
     </div>
 
-    <div class="legend" id="legend"></div>
-
-    <div class="selbar" id="selbar" hidden></div>
     <div id="panel"></div>
 
     <details class="raw">
@@ -400,7 +374,6 @@
         graph: null,
         byAddr: {},
         selected: null,
-        query: '',
         showLabels: false,
         showGhosts: true,
         showBindings: false,
@@ -458,7 +431,6 @@
             ? 'Controller reports: ' + graph.meta.error
             : 'Updated ' + new Date(graph.meta.generatedAt).toLocaleTimeString());
 
-          renderStats();
           layout();
           render();
           fitToView();
@@ -469,27 +441,6 @@
 
       function setStatus(text) {
         document.getElementById('status').textContent = text;
-      }
-
-      function renderStats() {
-        var m = state.graph.meta;
-        var c = state.graph.controller;
-        var items = [
-          ['Devices', m.deviceCount, false],
-          ['Routers', m.routerCount, false],
-          ['End devices', m.endDeviceCount, false],
-          ['Max hops', m.maxHops, false],
-          ['Weak links', m.weakLinkCount, m.weakLinkCount > 0],
-          ['Channel', c.channel == null ? '—' : c.channel, false],
-          ['PAN', c.panId || '—', false],
-        ];
-        if (m.ghostCount) items.push(['Stale', m.ghostCount, false]);
-        if (m.unreachableCount) items.push(['No route', m.unreachableCount, m.unreachableCount > 0]);
-
-        document.getElementById('netstats').innerHTML = items.map(function (it) {
-          return '<div class="netstat"><div class="v' + (it[2] ? ' warn' : '') + '">'
-            + escapeHtml(it[1]) + '</div><div class="k">' + escapeHtml(it[0]) + '</div></div>';
-        }).join('');
       }
 
       // ---------------------------------------------------------- helpers --
@@ -527,14 +478,6 @@
           set[node.path[i] + '->' + node.path[i + 1]] = true;
         }
         return set;
-      }
-
-      function matches(node) {
-        if (!state.query) return false;
-        var q = state.query.toLowerCase();
-        return [node.name, node.modelId, node.manufacturerName, node.ieeeAddr,
-          String(node.addr), '0x' + node.addr.toString(16)]
-          .some(function (v) { return v && String(v).toLowerCase().indexOf(q) !== -1; });
       }
 
       function shortName(name) {
@@ -654,7 +597,6 @@
           nodeLayer.appendChild(g);
         });
 
-        renderLegend();
         applyHighlight();
       }
 
@@ -694,22 +636,6 @@
           + ',0a' + r + ',' + r + ' 0 1,0 ' + (-2 * r) + ',0Z';
       }
 
-      function renderLegend() {
-        var hops = Math.min(state.rings.maxHops, 4);
-        var parts = ['<span><i class="shape" style="background:' + css('--h0')
-          + ';clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)"></i>Homey</span>'];
-        for (var k = 1; k <= hops; k++) {
-          parts.push('<span><i class="shape circle" style="background:' + css('--h' + k) + '"></i>'
-            + (k === hops && state.rings.maxHops > 4 ? k + '+ hops' : k + (k === 1 ? ' hop' : ' hops')) + '</span>');
-        }
-        parts.push('<span><i class="shape square"></i>Router</span>');
-        parts.push('<span><i class="shape circle"></i>End device</span>');
-        GRADE_ORDER.slice(0, 4).forEach(function (g) {
-          parts.push('<span><i class="q-dot q-' + g + '"></i>' + GRADE_LABEL[g] + ' link</span>');
-        });
-        document.getElementById('legend').innerHTML = parts.join('');
-      }
-
       // -------------------------------------------------------- highlight --
 
       function applyHighlight() {
@@ -723,13 +649,10 @@
           var d = g.__node;
           var isSel = sel && d.addr === sel.addr;
           var isPath = !!onPath[d.addr];
-          var isMatch = matches(d);
           g.classList.toggle('selected', !!isSel);
           g.classList.toggle('onpath', isPath && !isSel);
-          g.classList.toggle('match', isMatch);
           g.classList.toggle('dim', !!sel && !isPath && !isNeighbor(sel, d));
-          g.querySelector('text').style.display =
-            labelVisible(d, isPath, isMatch) ? '' : 'none';
+          g.querySelector('text').style.display = labelVisible(d, isPath) ? '' : 'none';
         });
 
         Array.prototype.forEach.call(linkLayer.childNodes, function (line) {
@@ -742,11 +665,10 @@
 
       /**
        * Naming every device at once is unreadable on a phone, so by default
-       * only the nodes that carry traffic are named. Selection, route and
-       * search always win.
+       * only the nodes that carry traffic are named. Selection and route win.
        */
-      function labelVisible(d, isPath, isMatch) {
-        if (state.showLabels || isPath || isMatch) return true;
+      function labelVisible(d, isPath) {
+        if (state.showLabels || isPath) return true;
         return d.isCoordinator || d.type === 'router';
       }
 
@@ -916,35 +838,13 @@
         state.selected = addr;
         document.getElementById('hint').style.opacity = 0;
         applyHighlight();
-        renderSelbar(state.byAddr[addr]);
         renderPanel(state.byAddr[addr]);
       }
 
       function clearSelection() {
         state.selected = null;
-        document.getElementById('selbar').hidden = true;
         applyHighlight();
         renderOverview();
-      }
-
-      /**
-       * A compact summary of the selection sits directly under the graph, so
-       * on a phone you can see what you tapped without scrolling first.
-       */
-      function renderSelbar(n) {
-        var bar = document.getElementById('selbar');
-        if (!n) { bar.hidden = true; return; }
-        bar.hidden = false;
-        bar.innerHTML =
-          '<span class="dot" style="background:' + hopColor(n) + '"></span>'
-          + '<span class="who"><b>' + escapeHtml(n.name) + '</b><small>'
-          + escapeHtml(n.isCoordinator ? 'Controller'
-            : (n.hops == null ? 'No route' : n.hops + (n.hops === 1 ? ' hop' : ' hops'))
-              + ' · ' + n.type
-              + (n.uplinkRate == null ? '' : ' · ' + Math.round(n.uplinkRate * 100) + '% uplink'))
-          + '</small></span>'
-          + '<button type="button" class="pill" id="clearsel">Clear</button>';
-        document.getElementById('clearsel').addEventListener('click', clearSelection);
       }
 
       function section(title, body) {
@@ -1202,8 +1102,8 @@
 
       /**
        * The canvas resizes for reasons that have nothing to do with the user
-       * wanting a new view — an iPhone hiding its address bar, or the keyboard
-       * opening over the search box. Re-fitting on every one of those threw
+       * wanting a new view — an iPhone hiding its address bar, or the device
+       * being rotated. Re-fitting on every one of those threw
        * away whatever the user had just panned or pinched to, so once the view
        * has been placed by hand it is only re-centred on the size change, never
        * reset.
@@ -1240,21 +1140,47 @@
         });
       }
 
+      /**
+       * Homey's dark mode is a setting inside the app, so it need not agree
+       * with the operating system — and a settings view that guesses wrong
+       * paints its text in the other theme's colour, on a ground it does not
+       * control. So read the background Homey actually put behind us and pick
+       * the palette from that, falling back to prefers-color-scheme when the
+       * background is transparent all the way up and there is nothing to read.
+       *
+       * Must run before body.themed adds our own background, or the probe
+       * reads our paint instead of Homey's.
+       */
+      function pickTheme() {
+        var node = document.body;
+        var colour = null;
+        while (node && !colour) {
+          var bg = getComputedStyle(node).backgroundColor;
+          var parts = bg && bg.match(/[\d.]+/g);
+          // Skip fully transparent backgrounds; they reveal what is behind.
+          if (parts && parts.length >= 3 && (parts.length < 4 || Number(parts[3]) > 0.1)) {
+            colour = parts;
+          }
+          node = node.parentElement;
+        }
+        if (!colour) return;
+        var luminance = (0.299 * colour[0] + 0.587 * colour[1] + 0.114 * colour[2]) / 255;
+        document.documentElement.setAttribute('data-theme', luminance < 0.5 ? 'dark' : 'light');
+      }
+
       function onHomeyReady(homeyInstance) {
         state.homey = homeyInstance;
         homeyInstance.ready();
 
-        document.getElementById('search').addEventListener('input', function (e) {
-          state.query = e.target.value.trim();
-          if (state.graph) applyHighlight();
-        });
+        pickTheme();
+        document.body.classList.add('themed');
 
         toggle('labels', 'showLabels', applyHighlight);
         toggle('ghosts', 'showGhosts', function () { render(); fitToView(); });
         toggle('bindings', 'showBindings', function () { render(); });
 
         document.getElementById('fit').addEventListener('click', fitToView);
-        document.getElementById('refresh').addEventListener('click', load);
+        document.getElementById('reload').addEventListener('click', load);
         document.getElementById('zoom-in').addEventListener('click', function () { zoomBy(1.3); });
         document.getElementById('zoom-out').addEventListener('click', function () { zoomBy(1 / 1.3); });
 
