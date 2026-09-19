@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "compatibility": ">=12.4.0",
   "sdk": 3,
+  "brandColor": "#E8951F",
   "runtime": "nodejs",
   "platforms": [
     "local"
@@ -12,11 +13,22 @@
     "en": "Zigbee Visualizer"
   },
   "description": {
-    "en": "Visualizes the Zigbee network."
+    "en": "See how your devices really reach each other, and where the signal struggles."
   },
   "category": [
     "tools"
   ],
+  "tags": {
+    "en": [
+      "network",
+      "mesh",
+      "map",
+      "diagnostics",
+      "signal",
+      "coverage",
+      "topology"
+    ]
+  },
   "permissions": [
     "homey:manager:api"
   ],

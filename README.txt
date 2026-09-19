@@ -1,1 +1,12 @@
-Visualizes the Zigbee network.
+This is a diagnostic tool for your Zigbee network. It maps every device in the
+mesh, traces the route each one takes back to Homey hop by hop, and grades
+every link on how much of its traffic gets through on the first try. The
+weakest links are ranked worst first, so the trouble in your network is the
+first thing you see rather than something you have to go hunting for.
+
+That matters because most devices never reach Homey directly. They reach it
+through each other, and when a relay is overloaded, sitting too far from the
+next device, or gone entirely, everything behind it turns slow and unreliable
+or stops reporting altogether, with nothing anywhere to say why. Drawn out in
+front of you, the one device holding back a whole branch is obvious, and so is
+the fix: move it, replace it, or put something mains-powered in between.
