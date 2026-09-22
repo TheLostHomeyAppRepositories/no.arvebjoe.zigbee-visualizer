@@ -103,11 +103,30 @@
       }
 
       * { box-sizing: border-box; }
+      /* The browser's own [hidden] rule is weaker than any class selector that
+         sets display, so a rule like `.fullscreen .detail { display: block }`
+         silently overrides it. Restate it so `hidden` always means hidden. */
+      [hidden] { display: none !important; }
       html, body { overflow-x: hidden; }
       body { color: var(--text); }
-      /* Added once the probe has read Homey's background, so that reading is
-         not of our own paint. */
-      body.themed { background: var(--page-bg); }
+
+      /* Added to the root once the probe has read Homey's background, so that
+         reading is not of our own paint.
+
+         The root is painted as well as the body: painting only the body leaves
+         whatever the body's box does not cover — the default margin, the strip
+         below the last element, a safe-area inset — showing the white beneath,
+         and setting overflow on the root stops the body's background
+         propagating up to fill it. Owning the margin and padding outright is
+         what lets the page use the full height of the settings view. */
+      :root.themed,
+      :root.themed body { background: var(--page-bg); }
+      :root.themed body {
+        margin: 0;
+        padding: 0 16px 24px;
+        min-height: 100vh;
+        min-height: 100svh;
+      }
 
       /* -------------------------------------------------------- toolbar -- */
       .toolbar { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 12px; }
@@ -156,9 +175,75 @@
         -webkit-user-select: none;
         -webkit-touch-callout: none;
       }
-      /* Not quite full height: a strip of page stays draggable, so the page can
-         still be scrolled (and the Shrink button reached) while expanded. */
-      .graph-wrap.tall { height: calc(100vh - 120px); height: calc(100svh - 120px); }
+      /* Fullscreen: the graph takes the whole viewport. Inside the Homey
+         settings view that viewport is the iframe, so this fills the settings
+         panel; where the browser also grants the Fullscreen API it becomes the
+         device screen as well. */
+      .graph-wrap.fullscreen {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        margin: 0;
+        width: 100vw;
+        height: 100vh;
+        height: 100svh;
+        transform: translate(-50%, -50%);
+        border: 0;
+        z-index: 9999;
+      }
+
+      /* Landscape: a box the size of the viewport's swapped axes, turned a
+         quarter turn about its own centre, which lands it exactly over the
+         viewport again. Turn the phone and the graph is upright and wide. */
+      .graph-wrap.fullscreen.rotated {
+        width: 100vh;
+        width: 100svh;
+        height: 100vw;
+        transform: translate(-50%, -50%) rotate(90deg);
+      }
+
+      body.fs-open { overflow: hidden; }
+
+      /* The route panel, for fullscreen only: the page's own panel is behind
+         the overlay there, so without this a selection has nowhere to show.
+         Positioned in the canvas's own coordinates, which is why it lands on
+         the viewer's left once the phone is turned. */
+      .detail { display: none; }
+      .graph-wrap.fullscreen .detail {
+        display: block;
+        position: absolute;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 14px 16px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, .35);
+      }
+      /* Landscape: a column down the left. */
+      .graph-wrap.fullscreen.wide .detail {
+        left: 14px;
+        top: 14px;
+        bottom: 14px;
+        width: min(330px, 40%);
+      }
+      /* Portrait fullscreen has no room for a column, so it becomes a sheet
+         across the bottom instead. */
+      .graph-wrap.fullscreen:not(.wide) .detail {
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        max-height: 45%;
+      }
+      .detail .p-head h2 { font-size: 19px; }
+      .detail .section { margin-bottom: 16px; }
+      .detail .section:last-child { margin-bottom: 0; }
+      .detail .badges { margin: 10px 0 14px; }
+      .detail .route li { padding: 10px 0; }
+
+      #rotate { display: none; }
+      .graph-wrap.fullscreen #rotate { display: block; }
       #canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 
       .hint {
@@ -316,7 +401,7 @@
     <div class="toolbar">
       <div class="chips-row">
         <button class="pill" id="fit" type="button">Fit</button>
-        <button class="pill" id="expand" type="button" aria-pressed="false">Expand</button>
+        <button class="pill" id="expand" type="button" aria-pressed="false">Fullscreen</button>
         <button class="pill" id="labels" type="button" aria-pressed="false">All labels</button>
         <button class="pill" id="ghosts" type="button" aria-pressed="true">Stale routes</button>
         <button class="pill" id="bindings" type="button" aria-pressed="false" hidden>Bindings</button>
@@ -328,10 +413,12 @@
     <div class="graph-wrap" id="graph-wrap">
       <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
       <div class="hint" id="hint">Tap a device to trace its route back to Homey.</div>
+      <div class="detail" id="detail" hidden></div>
       <div class="zoombar">
         <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
         <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
-        <button type="button" id="size" aria-label="Expand the graph">⤡</button>
+        <button type="button" id="rotate" aria-label="Turn the graph sideways">⟳</button>
+        <button type="button" id="size" aria-label="Fill the screen">⤡</button>
       </div>
     </div>
 
@@ -378,6 +465,7 @@
         showGhosts: true,
         showBindings: false,
         resizeObserver: null,
+        autoRotate: null,
       };
 
       var view = { k: 1, x: 0, y: 0, placed: false };
@@ -678,6 +766,42 @@
 
       // ------------------------------------------------------- pan / zoom --
 
+      /**
+       * The canvas's own size, which a bounding rectangle cannot give us: in
+       * landscape the element is turned a quarter turn, and getBoundingClientRect
+       * then reports the axis-aligned box around it, with width and height
+       * swapped. clientWidth/clientHeight are measured before any transform.
+       */
+      function canvasSize() {
+        return { width: wrap.clientWidth, height: wrap.clientHeight };
+      }
+
+      /**
+       * Whether the canvas is wider than it is tall in its own coordinates,
+       * which after a quarter turn is not what the screen looks like. Decides
+       * whether the route panel is a column on the left or a sheet along the
+       * bottom.
+       */
+      function syncShape() {
+        var box = canvasSize();
+        wrap.classList.toggle('wide', box.width > box.height);
+      }
+
+      /**
+       * A screen point in the canvas's own coordinates. Every gesture figure —
+       * pan delta, pinch midpoint, wheel anchor — goes through this, so the
+       * quarter turn needs no special case anywhere: the SVG's own matrix
+       * already describes it.
+       */
+      function localPoint(clientX, clientY) {
+        var ctm = svg.getScreenCTM();
+        if (!ctm) return { x: clientX, y: clientY };
+        var pt = svg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        return pt.matrixTransform(ctm.inverse());
+      }
+
       function applyView() {
         // One bad number would drop the whole transform and snap the graph
         // back to the origin, so never hand the DOM a non-finite view.
@@ -692,7 +816,7 @@
       function fitToView() {
         var nodes = visibleNodes().filter(function (n) { return isFinite(n.x); });
         if (!nodes.length) return;
-        var box = wrap.getBoundingClientRect();
+        var box = canvasSize();
         var pad = 34;
         var xs = nodes.map(function (n) { return n.x; });
         var ys = nodes.map(function (n) { return n.y; });
@@ -704,13 +828,14 @@
         view.x = box.width / 2 - view.k * (minX + maxX) / 2;
         view.y = box.height / 2 - view.k * (minY + maxY) / 2;
         view.placed = false;
+        syncShape();
         lastBox = { width: box.width, height: box.height };
         root.setAttribute('transform',
           'translate(' + view.x + ',' + view.y + ') scale(' + view.k + ')');
       }
 
       function zoomBy(factor, cx, cy) {
-        var box = wrap.getBoundingClientRect();
+        var box = canvasSize();
         var px = cx == null ? box.width / 2 : cx;
         var py = cy == null ? box.height / 2 : cy;
         var k = Math.max(0.15, Math.min(6, view.k * factor));
@@ -755,10 +880,9 @@
           e.preventDefault();
           pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
           var pts = points();
-          var box = wrap.getBoundingClientRect();
 
           if (pts.length === 1) {
-            var p = pts[0];
+            var p = localPoint(pts[0].x, pts[0].y);
             // `last` may still hold pinch state from a moment ago; only pan
             // when it is a pan anchor, or the arithmetic goes NaN and the
             // whole transform is dropped.
@@ -771,10 +895,10 @@
             }
             last = { x: p.x, y: p.y };
           } else if (pts.length >= 2) {
-            var a = pts[0];
-            var b = pts[1];
+            var a = localPoint(pts[0].x, pts[0].y);
+            var b = localPoint(pts[1].x, pts[1].y);
             var dist = Math.hypot(a.x - b.x, a.y - b.y);
-            var mid = { x: (a.x + b.x) / 2 - box.left, y: (a.y + b.y) / 2 - box.top };
+            var mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
             if (last && last.dist) {
               zoomBy(dist / last.dist, mid.x, mid.y);
               view.x += mid.x - last.mid.x;
@@ -805,7 +929,10 @@
         // the pointer event does not stop the page from scrolling under a pan.
         // Cancelling the touch does. The listener has to be non-passive, which
         // is not the default for touchmove.
+        var detail = document.getElementById('detail');
         wrap.addEventListener('touchmove', function (e) {
+          // ...except inside the route panel, which scrolls on its own.
+          if (detail.contains(e.target)) return;
           e.preventDefault();
         }, { passive: false });
 
@@ -818,8 +945,8 @@
 
         svg.addEventListener('wheel', function (e) {
           e.preventDefault();
-          var box = wrap.getBoundingClientRect();
-          zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - box.left, e.clientY - box.top);
+          var p = localPoint(e.clientX, e.clientY);
+          zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, p.x, p.y);
         }, { passive: false });
       }());
 
@@ -839,12 +966,48 @@
         document.getElementById('hint').style.opacity = 0;
         applyHighlight();
         renderPanel(state.byAddr[addr]);
+        renderDetail(state.byAddr[addr]);
       }
 
       function clearSelection() {
         state.selected = null;
         applyHighlight();
         renderOverview();
+        renderDetail(null);
+      }
+
+      /**
+       * The same route, over the canvas instead of under it. Only fullscreen
+       * shows it — everywhere else the panel below the graph is in view and
+       * says more. Kept to the route and the parent link, because this one is
+       * read on top of the picture it describes.
+       */
+      function renderDetail(n) {
+        var box = document.getElementById('detail');
+        if (!n) {
+          box.hidden = true;
+          box.innerHTML = '';
+          return;
+        }
+
+        var badges = ['<span class="badge type">'
+          + (n.isCoordinator ? 'controller' : n.isGhost ? 'unknown' : escapeHtml(n.type))
+          + '</span>'];
+        if (n.hops != null) {
+          badges.push('<span class="badge">' + n.hops + (n.hops === 1 ? ' hop' : ' hops') + '</span>');
+        }
+        if (n.descendantCount) badges.push('<span class="badge">relays ' + n.descendantCount + '</span>');
+        if (!n.hasRoute && !n.isCoordinator && !n.isGhost) {
+          badges.push('<span class="badge danger">no route</span>');
+        }
+
+        box.innerHTML = '<div class="p-head"><h2>' + escapeHtml(n.name) + '</h2><div class="sub">'
+          + escapeHtml([n.manufacturerName, n.modelId].filter(Boolean).join(' · ') || 'Unknown device')
+          + '</div></div><div class="badges">' + badges.join('') + '</div>'
+          + routeSection(n) + uplinkSection(n);
+        box.hidden = false;
+        box.scrollTop = 0;
+        wire(box);
       }
 
       function section(title, body) {
@@ -855,7 +1018,9 @@
         container.querySelectorAll('[data-addr]').forEach(function (element) {
           element.addEventListener('click', function () {
             select(Number(element.dataset.addr));
-            wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (!wrap.classList.contains('fullscreen')) {
+              wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
           });
         });
       }
@@ -1120,8 +1285,9 @@
 
       function onResize() {
         if (!state.graph) return;
-        var box = wrap.getBoundingClientRect();
+        var box = canvasSize();
         if (!box.width || !box.height) return;
+        if (state.autoRotate) state.autoRotate();
         if (!view.placed) { fitToView(); return; }
         if (lastBox) {
           view.x += (box.width - lastBox.width) / 2;
@@ -1148,8 +1314,8 @@
        * the palette from that, falling back to prefers-color-scheme when the
        * background is transparent all the way up and there is nothing to read.
        *
-       * Must run before body.themed adds our own background, or the probe
-       * reads our paint instead of Homey's.
+       * Must run before the themed class adds our own background, or the
+       * probe reads our paint instead of Homey's.
        */
       function pickTheme() {
         var node = document.body;
@@ -1173,7 +1339,7 @@
         homeyInstance.ready();
 
         pickTheme();
-        document.body.classList.add('themed');
+        document.documentElement.classList.add('themed');
 
         toggle('labels', 'showLabels', applyHighlight);
         toggle('ghosts', 'showGhosts', function () { render(); fitToView(); });
@@ -1184,23 +1350,106 @@
         document.getElementById('zoom-in').addEventListener('click', function () { zoomBy(1.3); });
         document.getElementById('zoom-out').addEventListener('click', function () { zoomBy(1 / 1.3); });
 
-        // Two ways in, because the toolbar pill scrolls out of reach once the
-        // graph is expanded — the one in the zoom bar never does.
+        // Two ways in, because the toolbar pill is behind the overlay once the
+        // graph is fullscreen — the one in the zoom bar never is.
         var expand = document.getElementById('expand');
         var size = document.getElementById('size');
+        var rotate = document.getElementById('rotate');
 
-        function toggleSize() {
-          var tall = wrap.classList.toggle('tall');
-          expand.setAttribute('aria-pressed', String(tall));
-          expand.textContent = tall ? 'Shrink' : 'Expand';
-          size.textContent = tall ? '⤢' : '⤡';
-          size.setAttribute('aria-label', tall ? 'Shrink the graph' : 'Expand the graph');
-          fitToView();
-          if (tall) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        /**
+         * A real Fullscreen API request, where it is allowed. Inside an iframe
+         * it needs allow="fullscreen" from the host page, and iPhone Safari has
+         * no element fullscreen at all, so this is an upgrade when it lands and
+         * nothing when it does not — the CSS overlay covers the viewport either
+         * way. Requested on the document so 100vh means the screen.
+         */
+        function requestNative() {
+          var el = document.documentElement;
+          var req = el.requestFullscreen || el.webkitRequestFullscreen;
+          if (!req) return;
+          try {
+            var p = req.call(el);
+            if (p && p.catch) p.catch(function () {});
+          } catch (err) { /* refused; the overlay still stands */ }
         }
 
-        expand.addEventListener('click', toggleSize);
-        size.addEventListener('click', toggleSize);
+        function exitNative() {
+          if (!document.fullscreenElement && !document.webkitFullscreenElement) return;
+          var exit = document.exitFullscreen || document.webkitExitFullscreen;
+          if (!exit) return;
+          try {
+            var p = exit.call(document);
+            if (p && p.catch) p.catch(function () {});
+          } catch (err) { /* nothing to undo */ }
+        }
+
+        // Stays true until the rotate button is pressed, after which the
+        // choice is the user's and nothing overrides it.
+        var rotateAuto = true;
+
+        function setRotated(on) {
+          wrap.classList.toggle('rotated', on);
+          syncShape();
+          rotate.setAttribute('aria-pressed', String(on));
+          rotate.setAttribute('aria-label',
+            on ? 'Turn the graph upright' : 'Turn the graph sideways');
+          // The canvas has swapped its axes, so the fit has to be redone.
+          requestAnimationFrame(fitToView);
+        }
+
+        function setFullscreen(on) {
+          wrap.classList.toggle('fullscreen', on);
+          document.body.classList.toggle('fs-open', on);
+          expand.setAttribute('aria-pressed', String(on));
+          expand.textContent = on ? 'Close' : 'Fullscreen';
+          size.textContent = on ? '✕' : '⤡';
+          size.setAttribute('aria-label', on ? 'Leave fullscreen' : 'Fill the screen');
+          // Turn sideways only from a portrait viewport. If the Homey app has
+          // already followed the phone into landscape there is nothing to gain,
+          // and the rotate button is there to override either way.
+          rotateAuto = true;
+          if (on) requestNative(); else exitNative();
+          // Decide the orientation only once the viewport has settled: a
+          // granted Fullscreen API request resizes it, and deciding before
+          // that turned a landscape desktop screen on its side.
+          if (on) requestAnimationFrame(autoRotate); else setRotated(false);
+          requestAnimationFrame(fitToView);
+        }
+
+        /**
+         * Turn sideways only when the viewport is portrait. On a phone whose
+         * Homey app is locked to portrait that is the whole point; on a screen
+         * already wider than it is tall there is nothing to gain, and if the
+         * app does follow the phone round, this unwinds the rotation again.
+         */
+        function autoRotate() {
+          if (!rotateAuto || !wrap.classList.contains('fullscreen')) return;
+          setRotated(window.innerHeight > window.innerWidth);
+        }
+
+        state.autoRotate = autoRotate;
+
+        expand.addEventListener('click', function () {
+          setFullscreen(!wrap.classList.contains('fullscreen'));
+        });
+        size.addEventListener('click', function () {
+          setFullscreen(!wrap.classList.contains('fullscreen'));
+        });
+        rotate.addEventListener('click', function () {
+          rotateAuto = false;
+          setRotated(!wrap.classList.contains('rotated'));
+        });
+
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape' && wrap.classList.contains('fullscreen')) setFullscreen(false);
+        });
+
+        // Leaving native fullscreen by gesture or Esc should drop the overlay too.
+        document.addEventListener('fullscreenchange', function () {
+          if (!document.fullscreenElement && wrap.classList.contains('fullscreen')) {
+            setFullscreen(false);
+          }
+        });
 
         var raw = document.querySelector('.raw');
         raw.addEventListener('toggle', function () {
