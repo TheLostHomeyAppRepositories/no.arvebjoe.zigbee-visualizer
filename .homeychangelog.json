@@ -4,5 +4,8 @@
   },
   "1.0.1": {
     "en": "Added the network map: every device drawn as a star joined to the ones it relays through, the route each takes back to Homey, and a quality grade on every hop with the weakest links listed first."
+  },
+  "1.1.0": {
+    "en": "Added fullscreen for the network map. On a phone held upright the map turns sideways, so turning the phone gives a wide view, and tapping a device shows its route to Homey in a panel beside the map."
   }
 }
