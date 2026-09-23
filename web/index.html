@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  The dump is parsed and drawn entirely in this page. This policy is what turns
+  that from a promise into something the browser enforces: connect-src 'self'
+  lets the page fetch the live state from the Homey that serves it, and nothing
+  else anywhere — and default-src 'none' closes off everything not named below.
+  The one relaxation is inline style attributes, which the detail panel writes
+  for bar widths and hop colours; they can load nothing, because img-src is
+  confined to this origin too.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data:;
+  connect-src 'self';
+  form-action 'none';
+  base-uri 'none'">
+<title>Zigbee Network Visualizer</title>
+<!-- Relative, like the scripts: a browser's default guess is /favicon.ico at the
+     domain root, which is the wrong place under a Pages project subpath. -->
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>Homey Zigbee Visualizer</h1>
+    <button id="open" title="Load another dump">Load…</button>
+    <span id="source" class="source"></span>
+  </div>
+  <div id="netstats" class="netstats"></div>
+  <div class="controls">
+    <input id="search" type="search" placeholder="Search name, model, address…" autocomplete="off">
+    <label class="toggle"><input type="checkbox" id="showBindings"> Bindings</label>
+    <label class="toggle"><input type="checkbox" id="showGhosts" checked> Stale routes</label>
+    <label class="toggle"><input type="checkbox" id="showLabels"> All labels</label>
+    <select id="layout" title="Layout">
+      <option value="tree">Radial tree</option>
+      <option value="force">Force mesh</option>
+    </select>
+    <button id="fit" title="Fit the whole network in view">Fit</button>
+  </div>
+</header>
+
+<main>
+  <div id="graph">
+    <svg id="canvas"></svg>
+    <div class="legend collapsible" id="legend" data-collapse="up">
+      <div class="legend-title collapse-keep">Hops from controller<button class="collapse-toggle" type="button" aria-expanded="true">▲</button></div>
+      <div class="legend-row"><i class="swatch h0"></i>Controller</div>
+      <div class="legend-row"><i class="swatch h1"></i>1 hop (direct)</div>
+      <div class="legend-row"><i class="swatch h2"></i>2 hops</div>
+      <div class="legend-row"><i class="swatch h3"></i>3 hops</div>
+      <div class="legend-row"><i class="swatch h4"></i>4+ hops</div>
+      <div class="legend-sep"></div>
+      <div class="legend-title">Link quality</div>
+      <div class="legend-row"><i class="q-dot q-good"></i>Good — 95%+ TX success</div>
+      <div class="legend-row"><i class="q-dot q-fair"></i>Fair — 85–95%</div>
+      <div class="legend-row"><i class="q-dot q-weak"></i>Weak — 70–85%</div>
+      <div class="legend-row"><i class="q-dot q-bad"></i>Bad — under 70%</div>
+      <div class="legend-row"><i class="q-dot q-unknown"></i>Too little traffic to judge</div>
+      <div class="legend-note">Line thickness = traffic volume</div>
+      <div class="legend-sep"></div>
+      <div class="legend-row"><i class="shape square"></i>Router</div>
+      <div class="legend-row"><i class="shape circle"></i>End device</div>
+      <div class="legend-row"><i class="shape ghost"></i>Stale / unreachable</div>
+    </div>
+    <div id="hint" class="hint">Click a node to inspect it and trace its path back to the controller. Hover a link for its quality.</div>
+  </div>
+
+  <aside class="panel-wrap collapsible" id="sidepanel" data-collapse="right">
+    <button class="collapse-toggle collapse-keep" type="button" aria-expanded="true">&gt;&gt;</button>
+    <div id="panel" class="panel">
+      <div class="panel-empty"><h2>No dump loaded</h2></div>
+    </div>
+  </aside>
+</main>
+
+<!-- Drop zone / paste box. Shown on start until a dump is loaded, and again
+     whenever a file is dragged anywhere over the window. -->
+<div id="loader" class="loader" hidden>
+  <div class="loader-card">
+    <button id="loaderClose" class="loader-close" type="button" title="Close (Esc)" hidden>&times;</button>
+    <h2>Load a Zigbee dump</h2>
+    <p class="loader-sub">
+      Your dump never leaves this browser: it is read, stripped of its network key
+      and drawn here. Nothing is uploaded, nothing is written to disk.
+    </p>
+
+    <div id="dropzone" class="dropzone">
+      <strong>Drop your dump here</strong>
+      <span>a <code>.json</code> or <code>.txt</code> file</span>
+      <button id="pickFile" type="button">Choose a file…</button>
+      <input id="fileInput" type="file" accept=".json,.txt,application/json,text/plain" hidden>
+    </div>
+
+    <div class="loader-or"><span>or paste the JSON</span></div>
+    <textarea id="pasteBox" spellcheck="false" placeholder='{ "controllerState": { … }, "nodes": { … } }'></textarea>
+
+    <div class="loader-actions">
+      <label class="toggle" title="Keeps the dump in this browser's local storage, so it is still here after a reload">
+        <input type="checkbox" id="remember" checked> Remember in this browser
+      </label>
+      <button id="forget" class="ghost-btn" type="button" hidden>Forget stored dump</button>
+      <button id="usePaste" class="primary-btn" type="button">Visualize</button>
+    </div>
+
+    <p id="loaderMsg" class="loader-msg" hidden></p>
+  </div>
+</div>
+
+<script src="vendor/d3.min.js"></script>
+<script src="lib/parse.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

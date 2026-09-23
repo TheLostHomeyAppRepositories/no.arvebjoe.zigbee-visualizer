@@ -7,5 +7,8 @@
   },
   "1.1.0": {
     "en": "Added fullscreen for the network map. On a phone held upright the map turns sideways, so turning the phone gives a wide view, and tapping a device shows its route to Homey in a panel beside the map."
+  },
+  "1.1.1": {
+    "en": "Added webserver so the visualizer can be viewed in a browser."
   }
 }

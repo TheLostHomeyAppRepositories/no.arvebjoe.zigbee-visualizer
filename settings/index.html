@@ -406,6 +406,7 @@
         <button class="pill" id="ghosts" type="button" aria-pressed="true">Stale routes</button>
         <button class="pill" id="bindings" type="button" aria-pressed="false" hidden>Bindings</button>
         <button class="pill" id="reload" type="button">Reload</button>
+        <button class="pill" id="full-view" type="button" hidden>Browser</button>
       </div>
       <div class="status" id="status"></div>
     </div>
@@ -1349,6 +1350,14 @@
         document.getElementById('reload').addEventListener('click', load);
         document.getElementById('zoom-in').addEventListener('click', function () { zoomBy(1.3); });
         document.getElementById('zoom-out').addEventListener('click', function () { zoomBy(1 / 1.3); });
+
+        // The full visualizer runs on the Homey itself; only the app knows its address.
+        state.homey.api('GET', '/visualizer', null, function (err, url) {
+          if (err || !url) return;
+          var button = document.getElementById('full-view');
+          button.addEventListener('click', function () { state.homey.openURL(url); });
+          button.hidden = false;
+        });
 
         // Two ways in, because the toolbar pill is behind the overlay once the
         // graph is fullscreen — the one in the zoom bar never is.

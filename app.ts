@@ -3,6 +3,10 @@
 import Homey from 'homey';
 import { HomeyAPI } from 'homey-api';
 import { buildGraph, Graph, ZigbeeState } from './lib/zigbee-graph';
+import { startWebServer } from './lib/web-server';
+
+/** The visualizer's port: 8154, after IEEE 802.15.4, the radio under Zigbee. */
+const WEB_PORT = 8154;
 
 /** The slice of the Web API client this app uses. */
 type HomeyApiClient = {
@@ -21,6 +25,17 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
    */
   async onInit() {
     this.log('Zigbee Visualizer has been initialized');
+    startWebServer({
+      port: WEB_PORT,
+      log: this.log.bind(this),
+      getState: () => this.getZigbeeState(),
+    });
+
+    try {
+      this.log(`Visualizer: ${await this.getVisualizerUrl()}`);
+    } catch (err) {
+      this.log(`Could not read Homey's local address: ${(err as Error).message}`);
+    }
   }
 
   /**
@@ -64,6 +79,12 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       + `${graph.meta.weakLinkCount} weak`);
 
     return graph;
+  }
+
+  /** Where the visualizer opens on the local network, e.g. http://192.168.1.50:8154/. */
+  async getVisualizerUrl(): Promise<string> {
+    const address = await this.homey.cloud.getLocalAddress();
+    return `http://${address.split(':')[0]}:${WEB_PORT}/`;
   }
 
 };

@@ -6,6 +6,7 @@ import type Homey from 'homey';
 type ZigbeeVisualizerApp = {
   getZigbeeState(): Promise<unknown>;
   getZigbeeGraph(): Promise<unknown>;
+  getVisualizerUrl(): Promise<string>;
 };
 
 type ApiRequest = {
@@ -32,6 +33,14 @@ module.exports = {
    */
   async getZigbeeGraph(request: ApiRequest) {
     return app(request).getZigbeeGraph();
+  },
+
+  /**
+   * GET /api/app/no.arvebjoe.zigbee-visualizer/visualizer
+   * Where the full visualizer opens on the local network.
+   */
+  async getVisualizerUrl(request: ApiRequest) {
+    return app(request).getVisualizerUrl();
   },
 
 };

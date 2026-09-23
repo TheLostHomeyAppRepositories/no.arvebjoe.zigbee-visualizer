@@ -1,5 +1,6 @@
 {
   "extends": "athom/homey-app",
+  "ignorePatterns": ["web/"],
   "settings": {
     "import/resolver": {
       "node": {
