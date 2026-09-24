@@ -103,6 +103,19 @@ function parseDump(raw) {
     if (!byAddr.has(addr)) byAddr.set(addr, ghostNode(addr));
   }
 
+  // A stale entry at the address a device had when Homey paired it, while that
+  // device now reports another one, is most likely that same device: the route
+  // to it still exists, and it is Homey's record of the device that is out of date.
+  for (const ghost of byAddr.values()) {
+    if (!ghost.isGhost) continue;
+    const owners = [...byAddr.values()]
+      .filter((n) => !n.isGhost && n.pairedAddr === ghost.addr && n.nwkAddr !== ghost.addr);
+    if (!owners.length) continue;
+    ghost.probablyWas = owners.map((n) => n.addr);
+    ghost.name = `0x${ghost.addr.toString(16)} · ${owners.map((n) => n.name).join(' / ')}?`;
+    owners.forEach((n) => { n.staleAddr = ghost.addr; });
+  }
+
   const coordinator = byAddr.get(COORDINATOR_ADDR);
   if (coordinator) {
     coordinator.isCoordinator = true;
@@ -222,6 +235,7 @@ function buildNode(addr, ieee, node) {
   return {
     addr,
     nwkAddr: addr, // what the device reports; addr is its id here, which differs for a shared address
+    pairedAddr: interviewAddr(node),
     ieeeAddr: ieee,
     name: node.name || node.modelId || `0x${addr.toString(16)}`,
     type: node.type || node.deviceType || 'unknown',

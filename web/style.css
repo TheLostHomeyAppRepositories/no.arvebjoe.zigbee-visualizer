@@ -372,6 +372,12 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
 
 .note { font-size: 11px; line-height: 1.6; color: var(--text-dim); margin: 0; }
 .linkish { cursor: pointer; }
+.notice {
+  margin: 0 0 18px; padding: 8px 10px; border: 1px solid #6b5320; border-radius: 6px;
+  background: rgba(227,179,65,.08); color: var(--warn); font-size: 12px; line-height: 1.5;
+}
+.notice .linkish { text-decoration: underline; }
+.notice.info { color: var(--text-dim); border-color: var(--border); background: none; }
 .linkish:hover { color: var(--accent); }
 .stat-warn { color: var(--q-weak); }
 

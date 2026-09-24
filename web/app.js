@@ -556,7 +556,7 @@ function applyHighlight() {
 function labelVisible(d, sel, onPath) {
   if (state.showLabels) return true;
   if (onPath.has(d.addr) || matches(d)) return true;
-  return d.isCoordinator || d.type === 'router';
+  return d.isCoordinator || d.type === 'router' || Boolean(d.probablyWas);
 }
 
 function isNeighbor(sel, d) {
@@ -746,6 +746,10 @@ function renderPanel(n) {
     </div>
     <div class="badges">${badges.join('')}</div>`);
 
+  // --- a stale entry and the device it most likely belongs to
+  const notice = staleNotice(n);
+  if (notice) sections.push(notice);
+
   // --- route back to the controller
   sections.push(routeSection(n));
 
@@ -864,6 +868,39 @@ function downlinkSection(n) {
     </li>`;
   }).join('');
   return section(`Links to children (${links.length})`, `<ul class="weaklinks">${rows}</ul>`);
+}
+
+/**
+ * Points out the link between a stale entry and the device that most likely left
+ * it behind: harmless when that device has a route at its new address, a sign of
+ * an out-of-date record in Homey when it has none.
+ */
+function staleNotice(n) {
+  const hex = (a) => `0x${a.toString(16).padStart(4, '0')}`;
+  const link = (d, text) => `<span class="linkish" data-addr="${d.addr}">${escapeHtml(text)}</span>`;
+  if (n.isGhost && n.probablyWas) {
+    const owners = n.probablyWas.map((a) => state.byAddr.get(a)).filter(Boolean);
+    const names = owners.map((d) => link(d, d.name)).join(' / ');
+    if (owners.every((d) => d.hasRoute)) {
+      return `<p class="notice info">This was the address of ${names} when Homey paired it. It has a route at
+        its new address too, so this is a leftover from before it rejoined: harmless.</p>`;
+    }
+    const listed = owners.map((d) => `${escapeHtml(d.name)} is listed at ${hex(d.nwkAddr)}`
+      + `${d.sharedWith ? `, shared with ${escapeHtml(d.sharedWith.join(', '))}` : ''}`).join('; ');
+    return `<p class="notice">This was the address of ${names} when Homey paired it, and the controller still has a
+      route to it: the device is probably still here. ${listed}, so Homey's record of it is probably out of date.</p>`;
+  }
+  if (n.staleAddr != null) {
+    const ghost = state.byAddr.get(n.staleAddr);
+    const old = ghost ? link(ghost, hex(n.staleAddr)) : hex(n.staleAddr);
+    if (n.hasRoute) {
+      return `<p class="notice info">Its pairing address ${old} is still in the routing table: a leftover from
+        before it rejoined at ${hex(n.nwkAddr)}. Harmless.</p>`;
+    }
+    return `<p class="notice">Its pairing address ${old} still has a route in the controller's table, while Homey
+      lists this device at ${hex(n.nwkAddr)} without one: Homey's record of it is probably out of date.</p>`;
+  }
+  return '';
 }
 
 function routeSection(n) {
