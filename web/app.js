@@ -82,11 +82,12 @@ svg.call(zoom).on('dblclick.zoom', null);
 // ---------------------------------------------------------------- data ----
 
 const REMEMBER_KEY = 'zigbee-visualizer.remember';
+const rememberBox = document.getElementById('remember');
 
 // A loaded dump used to be kept in this browser; it is kept on the Homey now.
 try {
   localStorage.removeItem('zigbee-visualizer.dump.v1');
-} catch (err) { /* nothing to do */ }
+} catch { /* nothing to do */ }
 
 /** The JSON answer to a request, or a rejection carrying the server's own message. */
 function getJson(url, options) {
@@ -120,14 +121,6 @@ function ingest(text, sourceName) {
     const storeError = remember && !id ? 'The Homey could not keep it, so you will have to load it again after a refresh.' : null;
     return { stripped, storeError };
   });
-}
-
-/** Draws an imported dump. It is not part of the history, so there is nothing to compare it with. */
-function showImport(graph, id) {
-  historyActive = id || 'import';
-  show(graph);
-  compareShown();
-  loadHistory();
 }
 
 /** Hands a freshly parsed graph to the rest of the app. */
@@ -202,7 +195,6 @@ const loader = document.getElementById('loader');
 const dropzone = document.getElementById('dropzone');
 const pasteBox = document.getElementById('pasteBox');
 const loaderMsg = document.getElementById('loaderMsg');
-const rememberBox = document.getElementById('remember');
 
 /** `pinned` = opened deliberately, so a passing drag cannot close it again. */
 function openLoader(pinned) {
@@ -506,7 +498,10 @@ function treeLayout(nodes, ringRadius, unrouted) {
     .id((d) => d.addr)
     // Devices the controller has no route for are hung off the controller so
     // they stay visible instead of disappearing from the picture.
-    .parentId((d) => (d.isCoordinator ? null : present.has(d.parent) ? d.parent : 0))(nodes);
+    .parentId((d) => {
+      if (d.isCoordinator) return null;
+      return present.has(d.parent) ? d.parent : 0;
+    })(nodes);
 
   const outer = ringRadius[unrouted];
   d3.tree()
@@ -572,8 +567,8 @@ function fitToView() {
   const minY = Math.min(...ys) - pad; const
     maxY = Math.max(...ys) + pad;
   const scale = Math.min(2, Math.min(width / (maxX - minX), height / (maxY - minY)));
-  const tx = width / 2 - scale * (minX + maxX) / 2;
-  const ty = height / 2 - scale * (minY + maxY) / 2;
+  const tx = width / 2 - (scale * (minX + maxX)) / 2;
+  const ty = height / 2 - (scale * (minY + maxY)) / 2;
   svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
 }
 
@@ -795,7 +790,10 @@ function renderPanel(n) {
   const sections = [];
 
   // --- header
-  const badges = [`<span class="badge type">${n.isCoordinator ? 'coordinator' : n.isGhost ? 'unknown device' : n.type}</span>`];
+  let typeLabel = n.type;
+  if (n.isCoordinator) typeLabel = 'coordinator';
+  else if (n.isGhost) typeLabel = 'unknown device';
+  const badges = [`<span class="badge type">${typeLabel}</span>`];
   if (n.hops != null) badges.push(`<span class="badge">${n.hops} hop${n.hops === 1 ? '' : 's'}</span>`);
   if (n.receiveWhenIdle === false) badges.push('<span class="badge">sleepy</span>');
   if (n.descendantCount) badges.push(`<span class="badge">relays ${n.descendantCount}</span>`);
@@ -840,7 +838,9 @@ function renderPanel(n) {
   if (n.stats && (n.stats.tx || n.stats.rx)) {
     const s = n.stats;
     const pct = s.successRate == null ? null : Math.round(s.successRate * 100);
-    const cls = pct == null ? '' : pct >= 90 ? '' : pct >= 70 ? 'warn' : 'danger';
+    let cls = '';
+    if (pct != null && pct < 70) cls = 'danger';
+    else if (pct != null && pct < 90) cls = 'warn';
     sections.push(section('Radio statistics', `
       <dl class="kv">
         <dt>TX success</dt><dd>${pct == null ? '—' : `${pct}%`}
@@ -1106,7 +1106,7 @@ const COLLAPSE_ICONS = {
 function readCollapsed() {
   try {
     return JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || {};
-  } catch (err) {
+  } catch {
     return {};
   }
 }
@@ -1131,7 +1131,7 @@ document.querySelectorAll('.collapsible').forEach((pane) => {
     saved[pane.id] = collapsed;
     try {
       localStorage.setItem(COLLAPSE_KEY, JSON.stringify(saved));
-    } catch (err) { /* ignore */ }
+    } catch { /* ignore */ }
   });
 });
 
@@ -1170,7 +1170,7 @@ pasteBox.addEventListener('input', () => note(''));
 rememberBox.addEventListener('change', () => {
   try {
     localStorage.setItem(REMEMBER_KEY, rememberBox.checked ? 'yes' : 'no');
-  } catch (err) { /* ignore */ }
+  } catch { /* ignore */ }
 });
 
 document.getElementById('imports').addEventListener('click', (e) => {
@@ -1226,7 +1226,7 @@ window.addEventListener('drop', (e) => {
 
 try {
   rememberBox.checked = localStorage.getItem(REMEMBER_KEY) !== 'no';
-} catch (err) { /* ignore */ }
+} catch { /* ignore */ }
 // Served by the Homey app: load the live network straight away. The newest kept
 // import and the loader are the fallback for when the Zigbee state can't be read.
 getJson('api/graph')
@@ -1249,6 +1249,14 @@ let historyActive = ''; // '' is live, otherwise the id of the snapshot on scree
 let historySnapshots = null; // every snapshot, oldest first, as last reported by the app
 
 let historySettings = null; // the snapshot settings, as last reported by the app
+
+/** Draws an imported dump. It is not part of the history, so there is nothing to compare it with. */
+function showImport(graph, id) {
+  historyActive = id || 'import';
+  show(graph);
+  compareShown();
+  loadHistory();
+}
 
 function renderHistory({
   enabled, intervalHours, keep, hourMs, snapshots,
@@ -1444,8 +1452,9 @@ function renderChangesTab() {
     .sort((a, b) => order[a.kind] - order[b.kind] || a.node.name.localeCompare(b.node.name));
 
   const rows = list.map((c) => {
-    const detail = c.kind === 'moved' ? `${escapeHtml(shortName(c.from))} → ${escapeHtml(shortName(c.to))}`
-      : c.kind === 'joined' ? 'joined the network' : 'no longer in the network';
+    let detail = 'no longer in the network';
+    if (c.kind === 'moved') detail = `${escapeHtml(shortName(c.from))} → ${escapeHtml(shortName(c.to))}`;
+    else if (c.kind === 'joined') detail = 'joined the network';
     const addr = c.kind === 'left' ? '' : ` data-addr="${c.node.addr}"`;
     return `<li${addr}><span class="change-dot ${c.kind}"></span>
       <span class="wl-name">${escapeHtml(shortName(c.node.name))}
@@ -1508,12 +1517,13 @@ function routeHistoryHtml(n, snapshots) {
   if (points.length < 2) return section('Route history', '<p class="note">Not enough snapshots yet to show a history.</p>');
 
   const keyOf = (parent) => (parent === undefined ? '~gone' : parent ?? '~none');
-  const label = (k) => (k === '~gone' ? 'Not in the network' : k === '~none' ? 'No route' : names[k] ?? k);
+  const FIXED_LABELS = { '~gone': 'Not in the network', '~none': 'No route' };
+  const label = (k) => FIXED_LABELS[k] ?? names[k] ?? k;
   const counts = new Map();
   points.forEach((p) => counts.set(keyOf(p.parent), (counts.get(keyOf(p.parent)) ?? 0) + 1));
   const colors = new Map();
-  [...counts.keys()].forEach((k, i) => colors.set(k, k === '~gone' ? 'var(--q-unknown)'
-    : k === '~none' ? 'var(--q-bad)' : ROUTE_COLORS[i % ROUTE_COLORS.length]));
+  const FIXED_COLORS = { '~gone': 'var(--q-unknown)', '~none': 'var(--q-bad)' };
+  [...counts.keys()].forEach((k, i) => colors.set(k, FIXED_COLORS[k] ?? ROUTE_COLORS[i % ROUTE_COLORS.length]));
 
   const timeline = points.map((p) => {
     const when = p.id ? new Date(p.takenAt).toLocaleString() : 'Live';
