@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import http from 'http';
+import net from 'net';
 import path from 'path';
 import toSafeJson from './safe-json';
 
@@ -33,6 +34,29 @@ const CONTENT_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.ico': 'image/x-icon',
 };
+
+/** Top-level names no public DNS answers for, so no outside site can point one at this Homey. */
+const PRIVATE_SUFFIXES = ['.local', '.lan', '.home', '.home.arpa', '.internal'];
+
+/**
+ * Whether the Host header names this server the way only the local network can:
+ * an IP address, localhost, a single-label name, or a name under a private suffix.
+ *
+ * This is what stops DNS rebinding. A site on the internet can point its own
+ * domain at this Homey's address, and the browser then treats the Homey as that
+ * site: it may read every answer and POST whatever it likes. But the browser keeps
+ * sending that domain in the Host header, and a public domain is never allowed here.
+ */
+function isLocalHost(header: string | undefined): boolean {
+  if (!header) return false;
+  // "[fe80::1]:8154" -> "fe80::1", "192.168.1.50:8154" -> "192.168.1.50"
+  const name = (header.startsWith('[') ? header.slice(1, header.indexOf(']')) : header.replace(/:\d+$/, ''))
+    .toLowerCase()
+    .replace(/\.$/, '');
+  if (net.isIP(name) !== 0 || name === 'localhost') return true;
+  if (!name.includes('.')) return name.length > 0;
+  return PRIVATE_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
 
 function send(res: http.ServerResponse, status: number, type: string, body: string | Buffer) {
   res.writeHead(status, { 'Content-Type': type });
@@ -147,6 +171,8 @@ function readJson(req: http.IncomingMessage): Promise<unknown> {
 function serveSettings(req: http.IncomingMessage, res: http.ServerResponse, { saveSettings, log }: WebServerOptions) {
   // Only a page on this server can send JSON here: another site's page cannot set
   // this Content-Type without a CORS preflight, which this server never approves.
+  // A site that rebinds its own domain to this Homey gets past that, but not past
+  // isLocalHost, which already turned it away.
   if (req.headers['content-type'] !== 'application/json') {
     send(res, 415, 'text/plain; charset=utf-8', 'Expected application/json');
     return;
@@ -167,6 +193,10 @@ function serveSettings(req: http.IncomingMessage, res: http.ServerResponse, { sa
 export function startWebServer(options: WebServerOptions): http.Server {
   const { port, log } = options;
   const server = http.createServer((req, res) => {
+    if (!isLocalHost(req.headers.host)) {
+      send(res, 403, 'text/plain; charset=utf-8', 'Open the visualizer by the Homey\'s IP address');
+      return;
+    }
     if (req.method === 'POST' && req.url === '/api/settings') {
       serveSettings(req, res, options);
       return;
