@@ -34,6 +34,7 @@ const state = {
   loaderPinned: false,
   panelTab: 'quality',
   trafficScale: 'tx',
+  changes: null, // what moved since the snapshot before the one on screen (see diffGraphs)
   keepView: false, // true while a snapshot is swapped in: keep the current zoom and position
 };
 
@@ -300,6 +301,7 @@ function render() {
       // Generous invisible hit area — several devices draw as 5px dots.
       g.append('circle').attr('class', 'hit').attr('r', 14).attr('fill', 'transparent');
       g.append('circle').attr('class', 'halo');
+      g.append('circle').attr('class', 'change');
       g.append('path').attr('class', 'body');
       g.append('text');
       return g;
@@ -327,6 +329,8 @@ function render() {
   node.select('circle.halo')
     .attr('r', (d) => radius(d) + 5)
     .attr('class', (d) => `halo q-${d.uplinkGrade || 'unknown'}`);
+
+  node.select('circle.change').attr('r', (d) => radius(d) + 9);
 
   node.select('path.body')
     .attr('d', (d) => shapeFor(d))
@@ -529,6 +533,7 @@ function applyHighlight() {
     .classed('selected', (d) => sel && d.addr === sel.addr)
     .classed('onpath', (d) => onPath.has(d.addr))
     .classed('match', (d) => matches(d))
+    .classed('changed', (d) => Boolean(state.changes?.has(nodeKey(d))))
     .classed('dim', (d) => (sel ? !onPath.has(d.addr) && !isNeighbor(sel, d) : searching && !matches(d)))
     .select('text')
     .attr('display', (d) => (labelVisible(d, sel, onPath) ? null : 'none'));
@@ -603,15 +608,17 @@ function clearSelection() {
   renderOverview();
 }
 
-const PANEL_TABS = [['quality', 'Link quality'], ['traffic', 'Traffic']];
+const PANEL_TABS = [['quality', 'Link quality'], ['traffic', 'Traffic'], ['changes', 'Changes']];
 
 /** With nothing selected, the panel shows a tab bar over the active tab. */
 function renderOverview() {
   if (state.panelTab === 'traffic') renderTrafficTab();
+  else if (state.panelTab === 'changes') renderChangesTab();
   else renderQualityTab();
   document.getElementById('panel').insertAdjacentHTML('afterbegin', `
     <div class="tabs">${PANEL_TABS.map(([id, label]) => `<button type="button"
-      class="tab${state.panelTab === id ? ' active' : ''}" data-tab="${id}">${label}</button>`).join('')}</div>`);
+      class="tab${state.panelTab === id ? ' active' : ''}" data-tab="${id}">${label}${id === 'changes' && state.changes?.size
+        ? ` (${state.changes.size})` : ''}</button>`).join('')}</div>`);
 }
 
 /**
@@ -741,6 +748,9 @@ function renderPanel(n) {
   const downlinks = downlinkSection(n);
   if (downlinks) sections.push(downlinks);
 
+  // --- route history, filled in once /api/routes answers
+  sections.push('<div id="routeHistory"></div>');
+
   // --- identity
   const rows = [
     ['Network addr', `<span class="mono">0x${n.addr.toString(16).padStart(4, '0')} (${n.addr})</span>`],
@@ -803,6 +813,7 @@ function renderPanel(n) {
   panel.querySelectorAll('[data-addr]').forEach((el) => {
     el.addEventListener('click', () => select(Number(el.dataset.addr)));
   });
+  loadRouteHistory(n);
 }
 
 /** How well this device reaches its parent relay. */
@@ -1049,7 +1060,10 @@ fetch('api/state')
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.text();
   })
-  .then((text) => submit(text, 'Homey (live)'))
+  .then((text) => {
+    submit(text, 'Homey (live)');
+    compareShown();
+  })
   .catch(() => { if (!restore()) openLoader(true); });
 
 // ----------------------------------------------------------- history ----
@@ -1059,23 +1073,50 @@ fetch('api/state')
 const historyList = document.getElementById('historyList');
 let historyActive = ''; // '' is live, otherwise the id of the snapshot on screen
 
+let historySnapshots = null; // every snapshot, oldest first, as last reported by the app
+
 let historySettings = null; // the snapshot settings, as last reported by the app
 
-function renderHistory({ enabled, intervalHours, keep, hourMs, snapshots }) {
+function renderHistory({ enabled, intervalHours, keep, hourMs, snapshots }, routes) {
   historySettings = { enabled, intervalHours, keep };
+  const first = historySnapshots === null;
+  historySnapshots = snapshots;
+  if (first) compareShown();
   const step = intervalHours * hourMs;
-  const items = [{ id: '', label: '●', title: 'Live' }].concat(snapshots.slice().reverse().map((s) => {
+  const moved = routeChanges(routes);
+  const items = [{ id: '', label: '●', when: 'Live' }].concat(snapshots.slice().reverse().map((s) => {
     const back = Math.max(1, Math.ceil((Date.now() - Date.parse(s.takenAt)) / step)) * intervalHours;
-    return { id: s.id, label: `-${back}`, title: new Date(s.takenAt).toLocaleString() };
+    return { id: s.id, label: `-${back}`, when: new Date(s.takenAt).toLocaleString(), moved: moved.get(s.id) };
   }));
-  historyList.innerHTML = items.map((it) => `<button type="button" data-snap="${it.id}"
-    class="history-item${it.id === historyActive ? ' active' : ''}" title="${escapeHtml(it.title)}">${it.label}</button>`).join('');
+  historyList.innerHTML = items.map((it) => {
+    const title = it.moved ? `${it.when} · ${it.moved} route change${it.moved === 1 ? '' : 's'}` : it.when;
+    return `<button type="button" data-snap="${it.id}" data-when="${escapeHtml(it.when)}"
+      class="history-item${it.id === historyActive ? ' active' : ''}${it.moved ? ' moved' : ''}"
+      title="${escapeHtml(title)}">${it.label}</button>`;
+  }).join('');
+}
+
+/** How many devices changed parent, joined or left in each snapshot, against the one before it. */
+function routeChanges(routes) {
+  const counts = new Map();
+  routes.forEach((r, i) => {
+    if (i === 0) return;
+    const before = routes[i - 1].parents;
+    const devices = new Set([...Object.keys(before), ...Object.keys(r.parents)]);
+    const n = [...devices].filter((d) => before[d] !== r.parents[d]).length;
+    if (n) counts.set(r.id, n);
+  });
+  return counts;
 }
 
 function loadHistory() {
-  fetch('api/snapshots')
-    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-    .then(renderHistory)
+  const json = (res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`)));
+  Promise.all([
+    fetch('api/snapshots').then(json),
+    // Without the routes the pane still works, just without the change markers.
+    fetch('api/routes').then(json).catch(() => []),
+  ])
+    .then(([overview, routes]) => renderHistory(overview, routes))
     .catch(() => { /* no history to show; the live view works without it */ });
 }
 
@@ -1092,8 +1133,9 @@ historyList.addEventListener('click', (e) => {
       historyActive = id;
       // Only while this one snapshot is drawn, so Fit, resizing and the rest still refit.
       state.keepView = true;
-      submit(text, id ? `Snapshot ${item.title} (${item.textContent} h)` : 'Homey (live)');
+      submit(text, id ? `Snapshot ${item.dataset.when} (${item.textContent} h)` : 'Homey (live)');
       state.keepView = false;
+      compareShown();
       loadHistory();
     })
     .catch((err) => toast(`Could not load that snapshot: ${err.message}`, 'warn'));
@@ -1146,3 +1188,168 @@ document.getElementById('hsSave').addEventListener('click', () => {
     })
     .catch((err) => toast(`Could not save the settings: ${err.message}`, 'warn'));
 });
+
+// ------------------------------------------------------------- changes ----
+
+/** Devices are matched on IEEE address: a network address can change on rejoin. */
+function nodeKey(n) {
+  return n.ieeeAddr || `nwk:${n.addr}`;
+}
+
+/** Every device that moved to another parent, joined or left between two graphs. */
+function diffGraphs(before, now) {
+  const index = (graph) => ({
+    byAddr: new Map(graph.nodes.map((n) => [n.addr, n])),
+    byKey: new Map(graph.nodes.filter((n) => !n.isGhost && !n.isCoordinator).map((n) => [nodeKey(n), n])),
+  });
+  const a = index(before);
+  const b = index(now);
+  const parentOf = (ix, n) => ix.byAddr.get(n.parent);
+  const parentName = (ix, n) => parentOf(ix, n)?.name ?? 'no route';
+
+  const changes = new Map();
+  for (const [key, n] of b.byKey) {
+    const old = a.byKey.get(key);
+    if (!old) {
+      changes.set(key, { kind: 'joined', node: n });
+    } else {
+      const was = parentOf(a, old);
+      const is = parentOf(b, n);
+      if ((was && nodeKey(was)) !== (is && nodeKey(is))) {
+        changes.set(key, { kind: 'moved', node: n, from: parentName(a, old), to: parentName(b, n) });
+      }
+    }
+  }
+  for (const [key, old] of a.byKey) {
+    if (!b.byKey.has(key)) changes.set(key, { kind: 'left', node: old });
+  }
+  return changes;
+}
+
+/** The snapshot one step older than what is on screen: for live, the newest one. */
+function olderThan(id) {
+  if (!historySnapshots?.length) return null;
+  if (!id) return historySnapshots[historySnapshots.length - 1].id;
+  const i = historySnapshots.findIndex((s) => s.id === id);
+  return i > 0 ? historySnapshots[i - 1].id : null;
+}
+
+/** Compares the graph on screen with the snapshot before it, and marks what changed. */
+function compareShown() {
+  // At startup the snapshot list can arrive before the graph; the boot code calls this again then.
+  const shown = state.graph;
+  if (!shown) return;
+  state.changes = null;
+  applyHighlight();
+  if (!state.selected) renderOverview();
+  const olderId = olderThan(historyActive);
+  if (!olderId) return;
+
+  fetch(`api/snapshots/${olderId}`)
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    .then((dump) => {
+      if (state.graph !== shown) return; // another snapshot was picked meanwhile
+      state.changes = diffGraphs(ZigbeeParse.parseDump(dump), shown);
+      applyHighlight();
+      if (!state.selected) renderOverview();
+    })
+    .catch(() => { /* nothing to compare with; the graph itself is fine */ });
+}
+
+function renderChangesTab() {
+  const order = { moved: 0, joined: 1, left: 2 };
+  const list = [...(state.changes?.values() ?? [])]
+    .sort((a, b) => order[a.kind] - order[b.kind] || a.node.name.localeCompare(b.node.name));
+
+  const rows = list.map((c) => {
+    const detail = c.kind === 'moved' ? `${escapeHtml(shortName(c.from))} → ${escapeHtml(shortName(c.to))}`
+      : c.kind === 'joined' ? 'joined the network' : 'no longer in the network';
+    const addr = c.kind === 'left' ? '' : ` data-addr="${c.node.addr}"`;
+    return `<li${addr}><span class="change-dot ${c.kind}"></span>
+      <span class="wl-name">${escapeHtml(shortName(c.node.name))}
+        <span class="wl-via">${detail}</span></span></li>`;
+  }).join('');
+
+  const empty = olderThan(historyActive) ? 'No routes changed.' : 'There is no older snapshot to compare with.';
+  document.getElementById('panel').innerHTML = `
+    <div class="p-head">
+      <h2>Changes</h2>
+      <div class="sub">What differs from the snapshot before this one. Click a device to trace it.</div>
+    </div>
+    <div class="changes-body">
+      ${section('Since the snapshot before', list.length ? `<ul class="weaklinks">${rows}</ul>` : `<p class="note">${empty}</p>`)}
+    </div>`;
+
+  document.getElementById('panel').querySelectorAll('[data-addr]').forEach((el) => {
+    el.addEventListener('click', () => select(Number(el.dataset.addr)));
+  });
+}
+
+// ------------------------------------------------------- route history ----
+
+// One colour per parent in a device's history, handed out in order of appearance.
+const ROUTE_COLORS = ['#4dd4ac', '#58a6ff', '#bc8cff', '#e3b341', '#ff8fab', '#39c5cf', '#e8883a'];
+// From this many parent changes on, a device is flagged: once is normal, repeatedly is not.
+const FLAP_THRESHOLD = 3;
+
+/** Fills the Route history section of a device's panel, once /api/routes answers. */
+function loadRouteHistory(n) {
+  const box = document.getElementById('routeHistory');
+  if (!box) return;
+  if (!n.ieeeAddr || n.isCoordinator || n.isGhost) {
+    box.remove();
+    return;
+  }
+  fetch('api/routes')
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    .then((snapshots) => {
+      if (state.selected !== n.addr || !box.isConnected) return; // another device was picked meanwhile
+      box.innerHTML = routeHistoryHtml(n, snapshots);
+    })
+    .catch(() => box.remove());
+}
+
+function routeHistoryHtml(n, snapshots) {
+  const names = {};
+  snapshots.forEach((s) => Object.assign(names, s.names));
+
+  // A parent is an IEEE address, null for "no route", or undefined for "not in the network".
+  const points = snapshots.map((s) => ({
+    id: s.id, takenAt: s.takenAt, parent: n.ieeeAddr in s.parents ? s.parents[n.ieeeAddr] : undefined,
+  }));
+  if (historyActive === '') {
+    // On the live view, what is on screen now counts as the newest point.
+    const p = state.byAddr.get(n.parent);
+    points.push({ id: '', takenAt: new Date().toISOString(), parent: p ? p.ieeeAddr : null });
+    if (p) names[p.ieeeAddr] = p.name;
+  }
+  if (points.length < 2) return section('Route history', '<p class="note">Not enough snapshots yet to show a history.</p>');
+
+  const keyOf = (parent) => (parent === undefined ? '~gone' : parent ?? '~none');
+  const label = (k) => (k === '~gone' ? 'Not in the network' : k === '~none' ? 'No route' : names[k] ?? k);
+  const counts = new Map();
+  points.forEach((p) => counts.set(keyOf(p.parent), (counts.get(keyOf(p.parent)) ?? 0) + 1));
+  const colors = new Map();
+  [...counts.keys()].forEach((k, i) => colors.set(k, k === '~gone' ? 'var(--q-unknown)'
+    : k === '~none' ? 'var(--q-bad)' : ROUTE_COLORS[i % ROUTE_COLORS.length]));
+
+  const timeline = points.map((p) => {
+    const when = p.id ? new Date(p.takenAt).toLocaleString() : 'Live';
+    return `<span class="rh-block${p.id === historyActive ? ' current' : ''}" style="background:${colors.get(keyOf(p.parent))}"
+      title="${escapeHtml(`${when}: ${label(keyOf(p.parent))}`)}"></span>`;
+  }).join('');
+
+  const rows = [...counts].map(([k, count]) => `<li>
+      <span class="rh-name">${escapeHtml(shortName(label(k)))}</span>
+      <span class="rh-bar"><span style="width:${(count / points.length) * 100}%;background:${colors.get(k)}"></span></span>
+      <span class="rh-count">${count}×</span>
+    </li>`).join('');
+
+  const changes = points.filter((p, i) => i > 0 && keyOf(p.parent) !== keyOf(points[i - 1].parent)).length;
+  const verdict = changes >= FLAP_THRESHOLD
+    ? `<p class="rh-warn">⚠ Changed parent ${changes} times over ${points.length} snapshots: a sign of a weak link.</p>`
+    : `<p class="note">${changes ? `Changed parent ${changes} time${changes === 1 ? '' : 's'}.` : 'Always the same parent.'}</p>`;
+
+  return section(`Route history (${points.length} snapshots)`,
+    `<div class="rh-timeline">${timeline}</div><ul class="rh-rows">${rows}</ul>${verdict}`);
+}

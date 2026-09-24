@@ -15,6 +15,8 @@ export type WebServerOptions = {
   listSnapshots: () => Promise<unknown>;
   /** One snapshot's JSON text, or null if there is no such snapshot. */
   readSnapshot: (id: string) => Promise<string | null>;
+  /** Who was whose parent in every snapshot, oldest first. */
+  listRoutes: () => Promise<unknown>;
   /** Validates and applies new snapshot settings; resolves to null when they are not valid. */
   saveSettings: (input: unknown) => Promise<unknown>;
 };
@@ -89,6 +91,16 @@ function serveSnapshots(res: http.ServerResponse, id: string | undefined, option
     .catch(fail);
 }
 
+/** Answers with who was whose parent in every snapshot. */
+function serveRoutes(res: http.ServerResponse, { listRoutes, log }: WebServerOptions) {
+  listRoutes()
+    .then((routes) => send(res, 200, 'application/json; charset=utf-8', JSON.stringify(routes)))
+    .catch((err: Error) => {
+      log(`Could not read the snapshot routes: ${err.message}`);
+      send(res, 500, 'text/plain; charset=utf-8', 'Could not read the snapshot routes');
+    });
+}
+
 /** Reads a small JSON request body; anything over 10 kB, or not JSON, is refused. */
 function readJson(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -148,6 +160,7 @@ export function startWebServer(options: WebServerOptions): http.Server {
     const snapshot = req.url?.match(/^\/api\/snapshots(?:\/([^/?]+))?$/);
     if (req.url === '/api/state') serveState(res, options);
     else if (snapshot) serveSnapshots(res, snapshot[1], options);
+    else if (req.url === '/api/routes') serveRoutes(res, options);
     else serveFile(req, res);
   });
 

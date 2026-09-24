@@ -12,6 +12,6 @@
     "en": "Added webserver so the visualizer can be viewed in a browser."
   },
   "1.2.0": {
-    "en": "Added history mechanism: the visualizer can now show how the network looked at any time in the past, and snapshots can be saved for later comparison."
+    "en": "Added a snapshot history. The app can save your Zigbee network on the clock, every 1, 2, 4 or 8 hours, keeping up to 24, and in the browser view you can step back through them; switch it on with the gear in the history bar, it is off by default. You can also see what changed between snapshots: devices that switched parent, joined or left are marked on the map and listed in a new Changes tab, the history bar marks the snapshots where routes changed, and every device shows its route history, with a warning when it keeps switching parents."
   }
 }

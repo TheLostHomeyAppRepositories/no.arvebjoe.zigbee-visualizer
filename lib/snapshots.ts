@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type Homey from 'homey';
 import toSafeJson from './safe-json';
+import { buildGraph, ZigbeeState } from './zigbee-graph';
 
 /** One "hour" of the interval. Set it to 60 * 1000 to test in minutes instead. */
 export const HOUR_MS = 60 * 60 * 1000;
@@ -46,6 +47,30 @@ export type SnapshotInfo = {
   takenAt: string;
 };
 
+/** Who was whose parent in one snapshot, by IEEE address. */
+export type SnapshotRoutes = SnapshotInfo & {
+  /** device -> its parent, or null when the controller had no route to it */
+  parents: Record<string, string | null>;
+  /** every device's name, parents included */
+  names: Record<string, string>;
+};
+
+/** The parents and names in one Zigbee state, as SnapshotRoutes carries them. */
+function routesOf(state: ZigbeeState): Pick<SnapshotRoutes, 'parents' | 'names'> {
+  const graph = buildGraph(state);
+  const byAddr = new Map(graph.nodes.map((n) => [n.addr, n]));
+  const parents: Record<string, string | null> = {};
+  const names: Record<string, string> = {};
+  graph.nodes.forEach((n) => {
+    if (!n.ieeeAddr || n.isGhost) return;
+    names[n.ieeeAddr] = n.name;
+    if (n.isCoordinator) return;
+    const parent = n.parent === undefined ? undefined : byAddr.get(n.parent);
+    parents[n.ieeeAddr] = parent?.ieeeAddr ?? null;
+  });
+  return { parents, names };
+}
+
 // A snapshot's id is the UTC time it was taken, e.g. 2026-09-24T12-00-00Z, and
 // its file is <id>.json. Sorting by name is sorting by time, so no index is needed.
 const ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
@@ -74,6 +99,9 @@ export class Snapshots {
   private options: SnapshotOptions;
 
   private timer?: NodeJS.Timeout;
+
+  /** routesOf() per snapshot id: a saved snapshot never changes, so it is worked out once. */
+  private routeCache = new Map<string, Pick<SnapshotRoutes, 'parents' | 'names'>>();
 
   constructor(options: SnapshotOptions) {
     this.options = options;
@@ -134,6 +162,25 @@ export class Snapshots {
     }
     await this.prune();
     await this.start();
+  }
+
+  /** Who was whose parent in every snapshot, oldest first. */
+  async routes(): Promise<SnapshotRoutes[]> {
+    const all = await this.list();
+    const routes = await Promise.all(all.map(async (s) => {
+      let r = this.routeCache.get(s.id);
+      if (!r) {
+        const json = await this.read(s.id);
+        if (json === null) return null;
+        r = routesOf(JSON.parse(json) as ZigbeeState);
+        this.routeCache.set(s.id, r);
+      }
+      return { ...s, ...r };
+    }));
+    // Snapshots that were pruned meanwhile need no cache entry any more.
+    const ids = new Set(all.map((s) => s.id));
+    [...this.routeCache.keys()].filter((id) => !ids.has(id)).forEach((id) => this.routeCache.delete(id));
+    return routes.filter((r): r is SnapshotRoutes => r !== null);
   }
 
   /** One snapshot's JSON text, or null if there is no such snapshot. */

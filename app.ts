@@ -43,6 +43,7 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       getState: () => this.getZigbeeState(),
       listSnapshots: async () => this.snapshots?.overview() ?? { snapshots: [] },
       readSnapshot: async (id) => this.snapshots?.read(id) ?? null,
+      listRoutes: async () => this.snapshots?.routes() ?? [],
       saveSettings: (input) => this.saveSnapshotSettings(input),
     });
 
