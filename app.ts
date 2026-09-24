@@ -4,7 +4,7 @@ import type http from 'http';
 import Homey from 'homey';
 import { HomeyAPI } from 'homey-api';
 import { buildGraph, Graph, ZigbeeState } from './lib/zigbee-graph';
-import { startWebServer } from './lib/web-server';
+import { startWebServer, urlHost } from './lib/web-server';
 import {
   DEFAULT_SETTINGS, SnapshotSettings, Snapshots, toSettings,
 } from './lib/snapshots';
@@ -183,7 +183,7 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
   /** Where the visualizer opens on the local network, e.g. http://192.168.1.50:8154/. */
   async getVisualizerUrl(): Promise<string> {
     const address = await this.homey.cloud.getLocalAddress();
-    return `http://${address.split(':')[0]}:${WEB_PORT}/`;
+    return `http://${urlHost(address)}:${WEB_PORT}/`;
   }
 
 };

@@ -82,6 +82,8 @@ svg.call(zoom).on('dblclick.zoom', null);
 // ---------------------------------------------------------------- data ----
 
 const REMEMBER_KEY = 'zigbee-visualizer.remember';
+// The most the Homey takes in for a dump: DUMP_LIMIT in lib/web-server.ts.
+const DUMP_LIMIT = 5 * 1024 * 1024;
 const rememberBox = document.getElementById('remember');
 
 // A loaded dump used to be kept in this browser; it is kept on the Homey now.
@@ -102,6 +104,9 @@ function getJson(url, options) {
  * the Homey keeps it beside the snapshots, stripped, for any browser to reopen.
  */
 function ingest(text, sourceName) {
+  if (new Blob([text]).size > DUMP_LIMIT) {
+    return Promise.reject(new Error(`That is over ${DUMP_LIMIT / 1024 / 1024} MB, more than the Homey takes in.`));
+  }
   let dump;
   try {
     dump = JSON.parse(text);

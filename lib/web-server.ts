@@ -38,8 +38,12 @@ export type WebServerOptions = {
 /** The most a settings change may send. */
 const SETTINGS_LIMIT = 10 * 1024;
 
-/** The most a dump may weigh: a large network's is a few MB. */
-const DUMP_LIMIT = 16 * 1024 * 1024;
+/**
+ * The most a dump may weigh. A network of a couple of hundred devices comes to
+ * about 1 MB, and the body is held in memory while it is read, where a Homey app
+ * has little to spare.
+ */
+const DUMP_LIMIT = 5 * 1024 * 1024;
 
 /** The page, its styles and its scripts; web/ sits next to lib/ in the app. */
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -73,6 +77,17 @@ function isLocalHost(header: string | undefined): boolean {
   if (net.isIP(name) !== 0 || name === 'localhost') return true;
   if (!name.includes('.')) return name.length > 0;
   return PRIVATE_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/**
+ * The host in an address as Homey gives it, e.g. "192.168.1.50:80", "[fe80::1]:80"
+ * or a bare "fe80::1", written the way a URL needs it: an IPv6 address in brackets.
+ */
+export function urlHost(address: string): string {
+  let host = address.replace(/:\d+$/, '');
+  if (address.startsWith('[')) host = address.slice(1, address.indexOf(']'));
+  else if (net.isIPv6(address)) host = address; // bare: its last group is no port
+  return net.isIPv6(host) ? `[${host}]` : host;
 }
 
 function send(res: http.ServerResponse, status: number, type: string, body: string | Buffer) {
@@ -184,21 +199,37 @@ function serveExport(res: http.ServerResponse, { getExport, log }: WebServerOpti
     });
 }
 
-/** Reads a JSON request body; anything over `limit` characters, or not JSON, is refused. */
+/**
+ * Whether a body announced as bigger than `limit` bytes was refused, with a 413.
+ * The page's fetch always announces its size, so this answers before any of it is
+ * read; readJson still counts, for a client that doesn't say.
+ */
+function isTooLarge(req: http.IncomingMessage, res: http.ServerResponse, limit: number): boolean {
+  if (Number(req.headers['content-length'] ?? 0) <= limit) return false;
+  // Closing the connection now would cut the client off mid-upload, before it
+  // reads this answer; the body is let through instead and thrown away unread.
+  req.resume();
+  send(res, 413, 'text/plain; charset=utf-8', `That is over ${limit / 1024 / 1024} MB`);
+  return true;
+}
+
+/** Reads a JSON request body; anything over `limit` bytes, or not JSON, is refused. */
 function readJson(req: http.IncomingMessage, limit: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk: string) => {
-      body += chunk;
-      if (body.length > limit) {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
         reject(new Error('Request body too large'));
         req.destroy();
+        return;
       }
+      chunks.push(chunk);
     });
     req.on('end', () => {
       try {
-        resolve(JSON.parse(body));
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       } catch (err) {
         reject(err);
       }
@@ -244,7 +275,7 @@ function serveSettings(req: http.IncomingMessage, res: http.ServerResponse, { sa
 function serveImport(
   req: http.IncomingMessage, res: http.ServerResponse, remember: boolean, { importDump, log }: WebServerOptions,
 ) {
-  if (!isJsonPost(req, res)) return;
+  if (!isJsonPost(req, res) || isTooLarge(req, res, DUMP_LIMIT)) return;
   readJson(req, DUMP_LIMIT).then(
     (input) => importDump(input, remember).then(
       (result) => {
@@ -256,7 +287,7 @@ function serveImport(
         send(res, 500, 'text/plain; charset=utf-8', 'Could not import the dump');
       },
     ),
-    () => send(res, 400, 'text/plain; charset=utf-8', 'That is not valid JSON, or it is over 16 MB'),
+    () => send(res, 400, 'text/plain; charset=utf-8', 'That is not valid JSON'),
   );
 }
 
@@ -286,7 +317,10 @@ export function startWebServer(options: WebServerOptions): http.Server {
       serveDeleteImport(res, imported[1], options);
       return;
     }
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
+    // HEAD only for the page's files: on the API it would do all the work of a
+    // GET (read the Zigbee state, build an export) for an answer without a body.
+    const isHeadForFile = req.method === 'HEAD' && !pathname.startsWith('/api/');
+    if (req.method !== 'GET' && !isHeadForFile) {
       send(res, 405, 'text/plain; charset=utf-8', 'Method not allowed');
       return;
     }
