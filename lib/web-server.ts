@@ -177,16 +177,21 @@ function serveSettings(req: http.IncomingMessage, res: http.ServerResponse, { sa
     send(res, 415, 'text/plain; charset=utf-8', 'Expected application/json');
     return;
   }
-  readJson(req)
-    .then((input) => saveSettings(input))
-    .then((saved) => {
-      if (saved === null) send(res, 400, 'text/plain; charset=utf-8', 'Invalid settings');
-      else send(res, 200, 'application/json; charset=utf-8', JSON.stringify(saved));
-    })
-    .catch((err: Error) => {
-      log(`Could not save the snapshot settings: ${err.message}`);
-      send(res, 400, 'text/plain; charset=utf-8', 'Could not save the settings');
-    });
+  // 400 only for what the page sent; a failure on this side is a 500, so the
+  // page doesn't tell the user to fix settings that were fine.
+  readJson(req).then(
+    (input) => saveSettings(input).then(
+      (saved) => {
+        if (saved === null) send(res, 400, 'text/plain; charset=utf-8', 'Invalid settings');
+        else send(res, 200, 'application/json; charset=utf-8', JSON.stringify(saved));
+      },
+      (err: Error) => {
+        log(`Could not apply the snapshot settings: ${err.message}`);
+        send(res, 500, 'text/plain; charset=utf-8', 'Could not apply the settings');
+      },
+    ),
+    () => send(res, 400, 'text/plain; charset=utf-8', 'Expected a small JSON body'),
+  );
 }
 
 /** A small web server on the local network, next to Homey's own. */

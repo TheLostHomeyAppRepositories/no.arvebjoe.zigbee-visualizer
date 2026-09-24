@@ -100,6 +100,12 @@ export class Snapshots {
 
   private timer?: NodeJS.Timeout;
 
+  /**
+   * Counts every stop(). A schedule remembers the count it started under, so one
+   * that was stopped while a snapshot was being taken can tell, and doesn't go on.
+   */
+  private run = 0;
+
   /** routesOf() per snapshot id: a saved snapshot never changes, so it is worked out once. */
   private routeCache = new Map<string, Pick<SnapshotRoutes, 'parents' | 'names'>>();
 
@@ -107,8 +113,14 @@ export class Snapshots {
     this.options = options;
   }
 
-  /** Takes a snapshot now if the latest is older than one slot, then one per slot. */
+  /**
+   * Takes a snapshot now if the latest is older than one slot, then one per slot.
+   * Resolves as soon as the schedule is set: the snapshot to catch up is taken
+   * after that, so a failed one is only logged and can't keep the schedule from starting.
+   */
   async start(): Promise<void> {
+    this.stop();
+    const { run } = this;
     const { dir, settings, log } = this.options;
     if (!settings.enabled) {
       log('Snapshots are off');
@@ -117,16 +129,20 @@ export class Snapshots {
     await fs.mkdir(dir, { recursive: true });
 
     const latest = (await this.list()).pop();
-    const slot = settings.intervalHours * HOUR_MS;
-    if (!latest || Date.now() - Date.parse(latest.takenAt) >= slot) await this.take();
-
+    if (run !== this.run) return; // stopped or restarted meanwhile
     log(`Snapshots every ${settings.intervalHours} h, keeping ${settings.keep}`);
-    this.scheduleNext();
+    this.scheduleNext(run);
+
+    const slot = settings.intervalHours * HOUR_MS;
+    if (!latest || Date.now() - Date.parse(latest.takenAt) >= slot) {
+      this.take(run).catch((err: Error) => log(`Snapshot failed: ${err.message}`));
+    }
   }
 
   stop(): void {
     if (this.timer) this.options.homey.clearTimeout(this.timer);
     this.timer = undefined;
+    this.run += 1;
   }
 
   /** Every snapshot on disk, oldest first. */
@@ -200,26 +216,34 @@ export class Snapshots {
     return fs.readFile(path.join(this.options.dir, `${id}.json`), 'utf8').catch(() => null);
   }
 
-  private scheduleNext(): void {
+  private scheduleNext(run: number): void {
     const slot = this.options.settings.intervalHours * HOUR_MS;
     let wait = slot - (msSinceLocalMidnight(new Date(), this.options.homey.clock.getTimezone()) % slot);
     // A timer can fire a moment early; don't let that turn into a second snapshot.
     if (wait < 1000) wait += slot;
 
     this.timer = this.options.homey.setTimeout(() => {
-      this.take()
+      this.take(run)
         .catch((err: Error) => this.options.log(`Snapshot failed: ${err.message}`))
-        .finally(() => this.scheduleNext());
+        // Not after a stop(): whoever stopped it has started its own schedule, if any.
+        .finally(() => {
+          if (run === this.run) this.scheduleNext(run);
+        });
     }, wait);
   }
 
-  private async take(): Promise<void> {
+  /** Saves the Zigbee state, unless the schedule `run` belongs to was stopped while it was read. */
+  private async take(run: number): Promise<void> {
     const { dir, getState, log } = this.options;
     const id = idFor(new Date());
     const file = path.join(dir, `${id}.json`);
 
+    const state = await getState();
+    // The settings may have changed meanwhile, and a new interval must not get an old one's snapshot.
+    if (run !== this.run) return;
+
     // Written under a temporary name first, so a half-written file never shows up in the list.
-    await fs.writeFile(`${file}.tmp`, toSafeJson(await getState()));
+    await fs.writeFile(`${file}.tmp`, toSafeJson(state));
     await fs.rename(`${file}.tmp`, file);
     log(`Snapshot saved: ${id}`);
 
