@@ -1028,7 +1028,6 @@ document.getElementById('layout').addEventListener('change', (e) => {
 document.getElementById('fit').addEventListener('click', fitToView);
 document.getElementById('open').addEventListener('click', () => openLoader(true));
 
-
 // Panes marked .collapsible fold down to their .collapse-keep part (e.g. the
 // title). data-collapse says which way they fold; the state is remembered per id.
 const COLLAPSE_KEY = 'zigbee-visualizer.collapsed';

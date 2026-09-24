@@ -406,7 +406,7 @@
         <button class="pill" id="ghosts" type="button" aria-pressed="true">Stale routes</button>
         <button class="pill" id="bindings" type="button" aria-pressed="false" hidden>Bindings</button>
         <button class="pill" id="reload" type="button">Reload</button>
-        <button class="pill" id="full-view" type="button" hidden>Browser</button>
+        <button class="pill" id="open-browser" type="button" hidden>Browser</button>
       </div>
       <div class="status" id="status"></div>
     </div>
@@ -1356,7 +1356,7 @@
         var isDesktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
         state.homey.api('GET', '/visualizer', null, function (err, url) {
           if (err || !url || !isDesktop) return;
-          var button = document.getElementById('full-view');
+          var button = document.getElementById('open-browser');
           button.addEventListener('click', function () { state.homey.openURL(url); });
           button.hidden = false;
         });
