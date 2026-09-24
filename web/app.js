@@ -12,14 +12,39 @@ const GRADE_ORDER = ['bad', 'weak', 'fair', 'good', 'unknown'];
 
 // Cluster ids we are likely to meet in a Homey network, for readable endpoints.
 const CLUSTERS = {
-  0: 'Basic', 1: 'Power Config', 3: 'Identify', 4: 'Groups', 5: 'Scenes',
-  6: 'On/Off', 8: 'Level Control', 10: 'Time', 25: 'OTA Upgrade', 32: 'Poll Control',
-  257: 'Door Lock', 258: 'Window Covering', 512: 'Pump Config', 513: 'Thermostat',
-  514: 'Fan Control', 516: 'Thermostat UI', 768: 'Color Control', 769: 'Ballast Config',
-  1024: 'Illuminance', 1026: 'Temperature', 1027: 'Pressure', 1028: 'Flow',
-  1029: 'Humidity', 1030: 'Occupancy', 1280: 'IAS Zone', 1281: 'IAS ACE',
-  1282: 'IAS WD', 1794: 'Metering', 2820: 'Electrical Meas.', 2821: 'Diagnostics',
-  4096: 'Touchlink', 64513: 'Manufacturer', 64514: 'Manufacturer',
+  0: 'Basic',
+  1: 'Power Config',
+  3: 'Identify',
+  4: 'Groups',
+  5: 'Scenes',
+  6: 'On/Off',
+  8: 'Level Control',
+  10: 'Time',
+  25: 'OTA Upgrade',
+  32: 'Poll Control',
+  257: 'Door Lock',
+  258: 'Window Covering',
+  512: 'Pump Config',
+  513: 'Thermostat',
+  514: 'Fan Control',
+  516: 'Thermostat UI',
+  768: 'Color Control',
+  769: 'Ballast Config',
+  1024: 'Illuminance',
+  1026: 'Temperature',
+  1027: 'Pressure',
+  1028: 'Flow',
+  1029: 'Humidity',
+  1030: 'Occupancy',
+  1280: 'IAS Zone',
+  1281: 'IAS ACE',
+  1282: 'IAS WD',
+  1794: 'Metering',
+  2820: 'Electrical Meas.',
+  2821: 'Diagnostics',
+  4096: 'Touchlink',
+  64513: 'Manufacturer',
+  64514: 'Manufacturer',
 };
 
 const state = {
@@ -59,7 +84,9 @@ svg.call(zoom).on('dblclick.zoom', null);
 const REMEMBER_KEY = 'zigbee-visualizer.remember';
 
 // A loaded dump used to be kept in this browser; it is kept on the Homey now.
-try { localStorage.removeItem('zigbee-visualizer.dump.v1'); } catch (err) { /* nothing to do */ }
+try {
+  localStorage.removeItem('zigbee-visualizer.dump.v1');
+} catch (err) { /* nothing to do */ }
 
 /** The JSON answer to a request, or a rejection carrying the server's own message. */
 function getJson(url, options) {
@@ -111,7 +138,11 @@ function show(graph) {
   state.byAddr = new Map();
   for (const node of graph.nodes) {
     const old = prev.get(node.addr);
-    if (old) Object.assign(node, { x: old.x, y: old.y, vx: 0, vy: 0 });
+    if (old) {
+      Object.assign(node, {
+        x: old.x, y: old.y, vx: 0, vy: 0,
+      });
+    }
     state.byAddr.set(node.addr, node);
   }
 
@@ -160,7 +191,9 @@ function renderImports() {
           <button type="button" class="ghost-btn" data-delete="${escapeHtml(it.id)}" title="Delete from the Homey">&times;</button>
         </div>`).join('')}`;
     })
-    .catch(() => { box.hidden = true; });
+    .catch(() => {
+      box.hidden = true;
+    });
 }
 
 // -------------------------------------------------------------- loading ----
@@ -202,7 +235,9 @@ function toast(text, kind) {
   clearTimeout(hintTimer);
   hint.textContent = text;
   hint.className = `hint ${kind || ''}`;
-  hintTimer = setTimeout(() => { hint.textContent = HINT_TEXT; hint.className = 'hint'; }, 8000);
+  hintTimer = setTimeout(() => {
+    hint.textContent = HINT_TEXT; hint.className = 'hint';
+  }, 8000);
 }
 
 function submit(text, sourceName) {
@@ -226,7 +261,9 @@ function readFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => submit(String(reader.result), file.name);
-  reader.onerror = () => { openLoader(true); note(`Could not read ${file.name}.`, 'bad'); };
+  reader.onerror = () => {
+    openLoader(true); note(`Could not read ${file.name}.`, 'bad');
+  };
   reader.readAsText(file);
 }
 
@@ -323,7 +360,9 @@ function render() {
       return g;
     })
     .attr('class', (d) => `node${d.isGhost ? ' ghost' : ''}`)
-    .on('click', (event, d) => { event.stopPropagation(); select(d.addr); })
+    .on('click', (event, d) => {
+      event.stopPropagation(); select(d.addr);
+    })
     .on('mouseenter', showTooltip)
     .on('mousemove', moveTooltip)
     .on('mouseleave', hideTooltip)
@@ -332,7 +371,9 @@ function render() {
         if (!event.active) simulation.alphaTarget(0.25).restart();
         d.fx = d.x; d.fy = d.y;
       })
-      .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on('drag', (event, d) => {
+        d.fx = event.x; d.fy = event.y;
+      })
       .on('end', (event, d) => {
         if (!event.active) simulation.alphaTarget(0);
         d.fx = null; d.fy = null;
@@ -438,12 +479,15 @@ function drawRings(ringRadius, maxHops) {
   const data = d3.range(1, maxHops + 1).map((k) => ({ k, r: ringRadius[k] }));
 
   ringLayer.selectAll('ellipse').data(data, (d) => d.k).join('ellipse')
-    .attr('cx', cx).attr('cy', cy)
-    .attr('rx', (d) => d.r * stretch).attr('ry', (d) => d.r)
+    .attr('cx', cx)
+    .attr('cy', cy)
+    .attr('rx', (d) => d.r * stretch)
+    .attr('ry', (d) => d.r)
     .attr('class', 'ring');
 
   ringLayer.selectAll('text').data(data, (d) => d.k).join('text')
-    .attr('x', cx).attr('y', (d) => cy - d.r - 5)
+    .attr('x', cx)
+    .attr('y', (d) => cy - d.r - 5)
     .attr('class', 'ring-label')
     .text((d) => `${d.k} hop${d.k === 1 ? '' : 's'}`);
 }
@@ -489,11 +533,15 @@ function treeLayout(nodes, ringRadius, unrouted) {
 function forceLayout(nodes, links, ringOf, ringGap) {
   const cx = width / 2;
   const cy = height / 2;
-  for (const n of nodes) { n.fx = null; n.fy = null; n.angle = null; }
+  for (const n of nodes) {
+    n.fx = null; n.fy = null; n.angle = null;
+  }
 
   // The controller is the anchor of the whole picture, so it stays put.
   const coordinator = nodes.find((n) => n.isCoordinator);
-  if (coordinator) { coordinator.fx = cx; coordinator.fy = cy; }
+  if (coordinator) {
+    coordinator.fx = cx; coordinator.fy = cy;
+  }
 
   if (!simulation) {
     simulation = d3.forceSimulation().on('tick', tick).on('end', fitToView);
@@ -519,8 +567,10 @@ function fitToView() {
   const xs = nodes.map((n) => n.x);
   const ys = nodes.map((n) => n.y);
   const pad = 50;
-  const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
-  const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
+  const minX = Math.min(...xs) - pad; const
+    maxX = Math.max(...xs) + pad;
+  const minY = Math.min(...ys) - pad; const
+    maxY = Math.max(...ys) + pad;
   const scale = Math.min(2, Math.min(width / (maxX - minX), height / (maxY - minY)));
   const tx = width / 2 - scale * (minX + maxX) / 2;
   const ty = height / 2 - scale * (minY + maxY) / 2;
@@ -530,7 +580,8 @@ function fitToView() {
 function tick() {
   linkLayer.selectAll('g.lnk line')
     .attr('x1', (d) => d.source.x).attr('y1', (d) => d.source.y)
-    .attr('x2', (d) => d.target.x).attr('y2', (d) => d.target.y);
+    .attr('x2', (d) => d.target.x)
+    .attr('y2', (d) => d.target.y);
   nodeLayer.selectAll('g.node').attr('transform', (d) => `translate(${d.x},${d.y})`);
 }
 
@@ -607,7 +658,9 @@ function moveTooltip(event) {
   const box = document.getElementById('graph').getBoundingClientRect();
   tooltip.style('left', `${event.clientX - box.left + 14}px`).style('top', `${event.clientY - box.top + 14}px`);
 }
-function hideTooltip() { tooltip.style('opacity', 0); }
+function hideTooltip() {
+  tooltip.style('opacity', 0);
+}
 
 // ---------------------------------------------------------------- panel ----
 
@@ -634,7 +687,7 @@ function renderOverview() {
   document.getElementById('panel').insertAdjacentHTML('afterbegin', `
     <div class="tabs">${PANEL_TABS.map(([id, label]) => `<button type="button"
       class="tab${state.panelTab === id ? ' active' : ''}" data-tab="${id}">${label}${id === 'changes' && state.changes?.size
-        ? ` (${state.changes.size})` : ''}</button>`).join('')}</div>`);
+  ? ` (${state.changes.size})` : ''}</button>`).join('')}</div>`);
 }
 
 /**
@@ -859,8 +912,8 @@ function uplinkSection(n) {
       <dt>Failed</dt><dd>${(link.txError || 0).toLocaleString()}</dd>
     </dl>
     ${link.grade === 'unknown'
-      ? '<p class="note">Too few transmissions to judge this link yet.</p>'
-      : ''}`);
+    ? '<p class="note">Too few transmissions to judge this link yet.</p>'
+    : ''}`);
 }
 
 /** How well the devices hanging off this one are doing. */
@@ -965,7 +1018,9 @@ function ago(ts) {
 }
 
 function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
 // ------------------------------------------------------------ interaction --
@@ -1033,7 +1088,9 @@ document.getElementById('showLabels').addEventListener('change', (e) => {
 });
 document.getElementById('layout').addEventListener('change', (e) => {
   state.layout = e.target.value;
-  state.graph.nodes.forEach((n) => { n.x = undefined; n.y = undefined; n.fx = null; n.fy = null; });
+  state.graph.nodes.forEach((n) => {
+    n.x = undefined; n.y = undefined; n.fx = null; n.fy = null;
+  });
   render();
 });
 document.getElementById('fit').addEventListener('click', fitToView);
@@ -1042,10 +1099,16 @@ document.getElementById('open').addEventListener('click', () => openLoader(true)
 // Panes marked .collapsible fold down to their .collapse-keep part (e.g. the
 // title). data-collapse says which way they fold; the state is remembered per id.
 const COLLAPSE_KEY = 'zigbee-visualizer.collapsed';
-const COLLAPSE_ICONS = { up: ['▲', '▼'], down: ['▼', '▲'], left: ['<<', '>>'], right: ['>>', '<<'] };
+const COLLAPSE_ICONS = {
+  up: ['▲', '▼'], down: ['▼', '▲'], left: ['<<', '>>'], right: ['>>', '<<'],
+};
 
 function readCollapsed() {
-  try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || {}; } catch (err) { return {}; }
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || {};
+  } catch (err) {
+    return {};
+  }
 }
 
 function setCollapsed(pane, collapsed) {
@@ -1066,11 +1129,15 @@ document.querySelectorAll('.collapsible').forEach((pane) => {
     if (state.graph && ['left', 'right'].includes(pane.dataset.collapse)) render();
     const saved = readCollapsed();
     saved[pane.id] = collapsed;
-    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(saved)); } catch (err) { /* ignore */ }
+    try {
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(saved));
+    } catch (err) { /* ignore */ }
   });
 });
 
-window.addEventListener('resize', () => { if (state.graph) render(); });
+window.addEventListener('resize', () => {
+  if (state.graph) render();
+});
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!loader.hidden) closeLoader();
@@ -1083,7 +1150,9 @@ document.addEventListener('keydown', (e) => {
 // ------------------------------------------------------- loading the dump --
 
 document.getElementById('loaderClose').addEventListener('click', closeLoader);
-loader.addEventListener('click', (e) => { if (e.target === loader) closeLoader(); });
+loader.addEventListener('click', (e) => {
+  if (e.target === loader) closeLoader();
+});
 
 const fileInput = document.getElementById('fileInput');
 document.getElementById('pickFile').addEventListener('click', () => fileInput.click());
@@ -1099,7 +1168,9 @@ pasteBox.addEventListener('keydown', (e) => {
 pasteBox.addEventListener('input', () => note(''));
 
 rememberBox.addEventListener('change', () => {
-  try { localStorage.setItem(REMEMBER_KEY, rememberBox.checked ? 'yes' : 'no'); } catch (err) { /* ignore */ }
+  try {
+    localStorage.setItem(REMEMBER_KEY, rememberBox.checked ? 'yes' : 'no');
+  } catch (err) { /* ignore */ }
 });
 
 document.getElementById('imports').addEventListener('click', (e) => {
@@ -1133,7 +1204,9 @@ window.addEventListener('dragenter', (e) => {
   openLoader();
   dropzone.classList.add('over');
 });
-window.addEventListener('dragover', (e) => { if (dragHasFile(e)) e.preventDefault(); });
+window.addEventListener('dragover', (e) => {
+  if (dragHasFile(e)) e.preventDefault();
+});
 window.addEventListener('dragleave', (e) => {
   if (!dragHasFile(e) || --dragDepth > 0) return;
   dragDepth = 0;
@@ -1151,7 +1224,9 @@ window.addEventListener('drop', (e) => {
 
 // ----------------------------------------------------------------- boot ----
 
-try { rememberBox.checked = localStorage.getItem(REMEMBER_KEY) !== 'no'; } catch (err) { /* ignore */ }
+try {
+  rememberBox.checked = localStorage.getItem(REMEMBER_KEY) !== 'no';
+} catch (err) { /* ignore */ }
 // Served by the Homey app: load the live network straight away. The newest kept
 // import and the loader are the fallback for when the Zigbee state can't be read.
 getJson('api/graph')
@@ -1160,7 +1235,9 @@ getJson('api/graph')
     show(graph);
     compareShown();
   })
-  .catch(() => restore().then((shown) => { if (!shown) openLoader(true); }));
+  .catch(() => restore().then((shown) => {
+    if (!shown) openLoader(true);
+  }));
 
 // ----------------------------------------------------------- history ----
 
@@ -1173,7 +1250,9 @@ let historySnapshots = null; // every snapshot, oldest first, as last reported b
 
 let historySettings = null; // the snapshot settings, as last reported by the app
 
-function renderHistory({ enabled, intervalHours, keep, hourMs, snapshots }, routes) {
+function renderHistory({
+  enabled, intervalHours, keep, hourMs, snapshots,
+}, routes) {
   historySettings = { enabled, intervalHours, keep };
   const first = historySnapshots === null;
   historySnapshots = snapshots;
@@ -1182,7 +1261,9 @@ function renderHistory({ enabled, intervalHours, keep, hourMs, snapshots }, rout
   const moved = routeChanges(routes);
   const items = [{ id: '', label: '●', when: 'Live' }].concat(snapshots.slice().reverse().map((s) => {
     const back = Math.max(1, Math.ceil((Date.now() - Date.parse(s.takenAt)) / step)) * intervalHours;
-    return { id: s.id, label: `-${back}`, when: new Date(s.takenAt).toLocaleString(), moved: moved.get(s.id) };
+    return {
+      id: s.id, label: `-${back}`, when: new Date(s.takenAt).toLocaleString(), moved: moved.get(s.id),
+    };
   }));
   historyList.innerHTML = items.map((it) => {
     const title = it.moved ? `${it.when} · ${it.moved} route change${it.moved === 1 ? '' : 's'}` : it.when;
@@ -1263,7 +1344,9 @@ hsInterval.addEventListener('change', () => {
   hsWarn.hidden = Number(hsInterval.value) === historySettings.intervalHours;
 });
 
-document.getElementById('hsCancel').addEventListener('click', () => { hsPanel.hidden = true; });
+document.getElementById('hsCancel').addEventListener('click', () => {
+  hsPanel.hidden = true;
+});
 
 // The server answers /api/export as a file to save, so the page itself stays where it is.
 document.getElementById('historyDownload').addEventListener('click', () => {
@@ -1314,7 +1397,9 @@ function diffGraphs(before, now) {
       const was = parentOf(a, old);
       const is = parentOf(b, n);
       if ((was && nodeKey(was)) !== (is && nodeKey(is))) {
-        changes.set(key, { kind: 'moved', node: n, from: parentName(a, old), to: parentName(b, n) });
+        changes.set(key, {
+          kind: 'moved', node: n, from: parentName(a, old), to: parentName(b, n),
+        });
       }
     }
   }
