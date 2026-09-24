@@ -20,6 +20,13 @@ const SNAPSHOT_DIR = '/userdata/snapshots';
 /** The key the snapshot settings are stored under in Homey's app settings. */
 const SETTINGS_KEY = 'snapshots';
 
+/**
+ * The key of the switch for the browser view, set from the settings page. The
+ * view is served to anyone on the local network, without a login, so it is off
+ * until the user turns it on.
+ */
+const WEB_SERVER_KEY = 'webServer';
+
 /** The slice of the Web API client this app uses. */
 type HomeyApiClient = {
   zigbee: {
@@ -35,14 +42,55 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
   /** The history of the Zigbee state; set up in onInit. */
   private snapshots?: Snapshots;
 
-  /** The visualizer's web server; started in onInit, closed in onUninit. */
+  /** The visualizer's web server, while the browser view is switched on. */
   private webServer?: http.Server;
+
+  /** Every start or stop of the web server, in order, so switching quickly can't overlap them. */
+  private webServerChange: Promise<void> = Promise.resolve();
 
   /**
    * onInit is called when the app is initialized.
    */
   async onInit() {
     this.log('Zigbee Visualizer has been initialized');
+
+    this.snapshots = new Snapshots({
+      homey: this.homey,
+      dir: SNAPSHOT_DIR,
+      settings: toSettings(this.homey.settings.get(SETTINGS_KEY)) ?? DEFAULT_SETTINGS,
+      getState: () => this.getZigbeeState(),
+      log: this.log.bind(this),
+    });
+    this.snapshots.start()
+      .catch((err: Error) => this.log(`Snapshots could not start: ${err.message}`));
+
+    // The settings page flips the switch; the server follows it without a restart.
+    const onSetting = (key: string) => {
+      if (key === WEB_SERVER_KEY) this.applyWebServerSetting();
+    };
+    this.homey.settings.on('set', onSetting);
+    this.homey.settings.on('unset', onSetting);
+    this.applyWebServerSetting();
+  }
+
+  /**
+   * onUninit is called when the app is stopped or updated.
+   */
+  async onUninit() {
+    this.snapshots?.stop();
+    this.webServerChange = this.webServerChange.then(() => this.closeWebServer());
+    await this.webServerChange;
+  }
+
+  /** Starts or stops the web server to match its switch, once any change under way is done. */
+  private applyWebServerSetting(): void {
+    this.webServerChange = this.webServerChange
+      .then(() => (this.homey.settings.get(WEB_SERVER_KEY) === true ? this.openWebServer() : this.closeWebServer()))
+      .catch((err: Error) => this.log(`Could not switch the web server: ${err.message}`));
+  }
+
+  private async openWebServer(): Promise<void> {
+    if (this.webServer) return;
     this.webServer = startWebServer({
       port: WEB_PORT,
       log: this.log.bind(this),
@@ -62,23 +110,9 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
     } catch (err) {
       this.log(`Could not read Homey's local address: ${(err as Error).message}`);
     }
-
-    this.snapshots = new Snapshots({
-      homey: this.homey,
-      dir: SNAPSHOT_DIR,
-      settings: toSettings(this.homey.settings.get(SETTINGS_KEY)) ?? DEFAULT_SETTINGS,
-      getState: () => this.getZigbeeState(),
-      log: this.log.bind(this),
-    });
-    this.snapshots.start()
-      .catch((err: Error) => this.log(`Snapshots could not start: ${err.message}`));
   }
 
-  /**
-   * onUninit is called when the app is stopped or updated.
-   */
-  async onUninit() {
-    this.snapshots?.stop();
+  private async closeWebServer(): Promise<void> {
     const server = this.webServer;
     this.webServer = undefined;
     if (!server) return;
@@ -87,6 +121,7 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       server.close(() => resolve());
       server.closeAllConnections();
     });
+    this.log('Web server stopped');
   }
 
   /**
