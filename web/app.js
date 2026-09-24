@@ -4,7 +4,7 @@ const HOP_COLORS = ['#f0f6fc', '#4dd4ac', '#58a6ff', '#bc8cff', '#ff8fab'];
 const GHOST_COLOR = '#6e7681';
 
 // Link quality, derived from the TX success counters of the device at the far
-// end of each hop. Thresholds mirror lib/parse.js.
+// end of each hop. The Homey grades them, in lib/zigbee-graph.ts.
 const GRADE_LABEL = {
   good: 'Good', fair: 'Fair', weak: 'Weak', bad: 'Bad', unknown: 'Too little traffic',
 };
@@ -56,38 +56,51 @@ svg.call(zoom).on('dblclick.zoom', null);
 
 // ---------------------------------------------------------------- data ----
 
-const STORAGE_KEY = 'zigbee-visualizer.dump.v1';
 const REMEMBER_KEY = 'zigbee-visualizer.remember';
 
+// A loaded dump used to be kept in this browser; it is kept on the Homey now.
+try { localStorage.removeItem('zigbee-visualizer.dump.v1'); } catch (err) { /* nothing to do */ }
+
+/** The JSON answer to a request, or a rejection carrying the server's own message. */
+function getJson(url, options) {
+  return fetch(url, options).then((res) => (res.ok
+    ? res.json()
+    : res.text().then((text) => Promise.reject(new Error(text || `HTTP ${res.status}`)))));
+}
+
 /**
- * Reads the text of a dump, strips its secrets, parses it and draws it. All of
- * it happens here in the page: the text is never sent to the server, and the
- * only copy that outlives the tab is the one in this browser's local storage.
+ * Checks the text of a dump, then has the Homey strip its secrets and build its
+ * graph, with the same code that draws the live network. With Remember ticked
+ * the Homey keeps it beside the snapshots, stripped, for any browser to reopen.
  */
 function ingest(text, sourceName) {
   let dump;
   try {
     dump = JSON.parse(text);
   } catch (err) {
-    throw new Error(`That is not valid JSON — ${err.message}`);
+    return Promise.reject(new Error(`That is not valid JSON — ${err.message}`));
   }
   if (!dump || typeof dump !== 'object' || (!dump.nodes && !dump.controllerState)) {
-    throw new Error('No "nodes" or "controllerState" in there — that does not look like a Homey Zigbee dump.');
+    return Promise.reject(new Error('No "nodes" or "controllerState" in there — that does not look like a Homey Zigbee dump.'));
   }
 
-  // Before anything else, and before any copy of the dump is kept: drop the
-  // network key, so a dump the user forgot to redact carries it no further.
-  const stripped = ZigbeeParse.stripSecrets(dump);
+  const remember = rememberBox.checked;
+  return getJson(`api/imports${remember ? '?remember=1' : ''}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text,
+  }).then(({ graph, stripped, id }) => {
+    graph.meta.source = sourceName;
+    showImport(graph, id);
+    const storeError = remember && !id ? 'The Homey could not keep it, so you will have to load it again after a refresh.' : null;
+    return { stripped, storeError };
+  });
+}
 
-  const graph = ZigbeeParse.parseDump(dump);
-  graph.meta.source = sourceName;
-
-  // Store before drawing: the dump is known good by now, and trouble in the
-  // renderer should not also cost the user their copy of it.
-  const storeError = rememberBox.checked ? remember(dump, sourceName, stripped) : (forget(), null);
-
+/** Draws an imported dump. It is not part of the history, so there is nothing to compare it with. */
+function showImport(graph, id) {
+  historyActive = id || 'import';
   show(graph);
-  return { stripped, storeError };
+  compareShown();
+  loadHistory();
 }
 
 /** Hands a freshly parsed graph to the rest of the app. */
@@ -110,44 +123,44 @@ function show(graph) {
   else renderOverview();
 }
 
-// ------------------------------------------------------------- storage ----
-// The dump lives in localStorage, which is per-origin and stays on this
-// machine. It is already stripped of its secrets by the time it gets here.
+// ------------------------------------------------------------- imports ----
+// Dumps loaded with Remember ticked are kept on the Homey, beside the snapshots,
+// already stripped of their secrets. They are listed in the loader card.
 
-function remember(dump, sourceName, stripped) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      version: 1, name: sourceName, savedAt: Date.now(), stripped, dump,
-    }));
-    return null;
-  } catch (err) {
-    // Almost always the ~5 MB quota. The graph is drawn either way.
-    forget();
-    return 'Too big for this browser’s storage, so it is not kept — you will have to load it again after a refresh.';
-  }
+const importLabel = (it) => `Imported ${new Date(it.takenAt).toLocaleString()}`;
+
+/** Draws one kept import; resolves to false when it can't be read. */
+function openImport(it) {
+  return getJson(`api/imports/${encodeURIComponent(it.id)}`)
+    .then((graph) => {
+      graph.meta.source = importLabel(it);
+      showImport(graph, it.id);
+      return true;
+    })
+    .catch(() => false);
 }
 
+/** Falls back to the newest kept import when the live state can't be read. */
 function restore() {
-  let saved = null;
-  try {
-    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-  } catch (err) { /* corrupt entry — fall through and drop it */ }
-  if (!saved || !saved.dump) return false;
-
-  try {
-    ZigbeeParse.stripSecrets(saved.dump); // belt and braces: it was stripped before it was stored
-    const graph = ZigbeeParse.parseDump(saved.dump);
-    graph.meta.source = saved.name;
-    show(graph);
-    return true;
-  } catch (err) {
-    forget();
-    return false;
-  }
+  return getJson('api/imports')
+    .then((list) => (list.length ? openImport(list[list.length - 1]) : false))
+    .catch(() => false);
 }
 
-function forget() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* nothing to do */ }
+/** Lists the kept imports in the loader card, newest first. */
+function renderImports() {
+  const box = document.getElementById('imports');
+  getJson('api/imports')
+    .then((list) => {
+      box.hidden = !list.length;
+      box.innerHTML = `<div class="imports-title">Kept on this Homey</div>${list.slice().reverse().map((it) => `
+        <div class="import-row">
+          <button type="button" class="import-open" data-import="${escapeHtml(it.id)}"
+            data-taken="${escapeHtml(it.takenAt)}">${escapeHtml(importLabel(it))}</button>
+          <button type="button" class="ghost-btn" data-delete="${escapeHtml(it.id)}" title="Delete from the Homey">&times;</button>
+        </div>`).join('')}`;
+    })
+    .catch(() => { box.hidden = true; });
 }
 
 // -------------------------------------------------------------- loading ----
@@ -163,7 +176,7 @@ function openLoader(pinned) {
   if (pinned) state.loaderPinned = true;
   loader.hidden = false;
   document.getElementById('loaderClose').hidden = !state.graph;
-  document.getElementById('forget').hidden = !hasStoredDump();
+  renderImports();
 }
 
 function closeLoader() {
@@ -172,10 +185,6 @@ function closeLoader() {
   loader.hidden = true;
   dropzone.classList.remove('over');
   note('');
-}
-
-function hasStoredDump() {
-  try { return Boolean(localStorage.getItem(STORAGE_KEY)); } catch (err) { return false; }
 }
 
 /** A message inside the loader card — errors and warnings live here. */
@@ -198,17 +207,19 @@ function toast(text, kind) {
 
 function submit(text, sourceName) {
   if (!String(text || '').trim()) return note('Nothing to read there yet.', 'bad');
-  let result;
-  try {
-    result = ingest(text, sourceName);
-  } catch (err) {
-    openLoader(true);
-    return note(err.message, 'bad');
-  }
-  pasteBox.value = '';
-  closeLoader();
-  if (result.storeError) toast(result.storeError, 'warn');
-  else if (result.stripped.length) toast(`Network key removed from ${sourceName} — it is never stored or drawn.`, 'ok');
+  note('Reading…');
+  return ingest(text, sourceName).then(
+    (result) => {
+      pasteBox.value = '';
+      closeLoader();
+      if (result.storeError) toast(result.storeError, 'warn');
+      else if (result.stripped.length) toast(`Network key removed from ${sourceName} — it is never stored or drawn.`, 'ok');
+    },
+    (err) => {
+      openLoader(true);
+      note(err.message, 'bad');
+    },
+  );
 }
 
 function readFile(file) {
@@ -1089,16 +1100,25 @@ pasteBox.addEventListener('input', () => note(''));
 
 rememberBox.addEventListener('change', () => {
   try { localStorage.setItem(REMEMBER_KEY, rememberBox.checked ? 'yes' : 'no'); } catch (err) { /* ignore */ }
-  if (!rememberBox.checked) {
-    forget();
-    document.getElementById('forget').hidden = true;
-  }
 });
 
-document.getElementById('forget').addEventListener('click', () => {
-  forget();
-  document.getElementById('forget').hidden = true;
-  note('Removed from this browser’s storage.', 'ok');
+document.getElementById('imports').addEventListener('click', (e) => {
+  const open = e.target.closest('[data-import]');
+  const del = e.target.closest('[data-delete]');
+  if (open) {
+    openImport({ id: open.dataset.import, takenAt: open.dataset.taken }).then((shown) => {
+      if (shown) closeLoader();
+      else note('Could not read that import.', 'bad');
+    });
+  } else if (del) {
+    fetch(`api/imports/${encodeURIComponent(del.dataset.delete)}`, { method: 'DELETE' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        note('Deleted from the Homey.', 'ok');
+      })
+      .catch((err) => note(`Could not delete it: ${err.message}`, 'bad'))
+      .finally(renderImports);
+  }
 });
 
 // Dragging a file anywhere over the window opens the drop zone; letting go
@@ -1132,18 +1152,15 @@ window.addEventListener('drop', (e) => {
 // ----------------------------------------------------------------- boot ----
 
 try { rememberBox.checked = localStorage.getItem(REMEMBER_KEY) !== 'no'; } catch (err) { /* ignore */ }
-// Served by the Homey app: load the live state straight away. The saved dump
-// and the loader stay as the fallback for when the Homey cannot be reached.
-fetch('api/state')
-  .then((res) => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.text();
-  })
-  .then((text) => {
-    submit(text, 'Homey (live)');
+// Served by the Homey app: load the live network straight away. The newest kept
+// import and the loader are the fallback for when the Zigbee state can't be read.
+getJson('api/graph')
+  .then((graph) => {
+    graph.meta.source = 'Homey (live)';
+    show(graph);
     compareShown();
   })
-  .catch(() => { if (!restore()) openLoader(true); });
+  .catch(() => restore().then((shown) => { if (!shown) openLoader(true); }));
 
 // ----------------------------------------------------------- history ----
 
@@ -1203,16 +1220,13 @@ historyList.addEventListener('click', (e) => {
   const item = e.target.closest('[data-snap]');
   if (!item) return;
   const id = item.dataset.snap;
-  fetch(id ? `api/snapshots/${id}` : 'api/state')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.text();
-    })
-    .then((text) => {
+  getJson(id ? `api/snapshots/${id}` : 'api/graph')
+    .then((graph) => {
       historyActive = id;
+      graph.meta.source = id ? `Snapshot ${item.dataset.when} (${item.textContent} h)` : 'Homey (live)';
       // Only while this one snapshot is drawn, so Fit, resizing and the rest still refit.
       state.keepView = true;
-      submit(text, id ? `Snapshot ${item.dataset.when} (${item.textContent} h)` : 'Homey (live)');
+      show(graph);
       state.keepView = false;
       compareShown();
       loadHistory();
@@ -1329,11 +1343,10 @@ function compareShown() {
   const olderId = olderThan(historyActive);
   if (!olderId) return;
 
-  fetch(`api/snapshots/${olderId}`)
-    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-    .then((dump) => {
+  getJson(`api/snapshots/${olderId}`)
+    .then((older) => {
       if (state.graph !== shown) return; // another snapshot was picked meanwhile
-      state.changes = diffGraphs(ZigbeeParse.parseDump(dump), shown);
+      state.changes = diffGraphs(older, shown);
       applyHighlight();
       if (!state.selected) renderOverview();
     })

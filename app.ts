@@ -8,6 +8,7 @@ import {
   DEFAULT_SETTINGS, SnapshotSettings, Snapshots, toSettings,
 } from './lib/snapshots';
 import buildExport from './lib/export';
+import { stripSecrets } from './lib/safe-json';
 
 /** The visualizer's port: 8154, after IEEE 802.15.4, the radio under Zigbee. */
 const WEB_PORT = 8154;
@@ -41,12 +42,15 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
     startWebServer({
       port: WEB_PORT,
       log: this.log.bind(this),
-      getState: () => this.getZigbeeState(),
+      getGraph: () => this.getZigbeeGraph(),
       listSnapshots: async () => this.snapshots?.overview() ?? { snapshots: [] },
-      readSnapshot: async (id) => this.snapshots?.read(id) ?? null,
+      readGraph: (id) => this.getSnapshotGraph(id),
       listRoutes: async () => this.snapshots?.routes() ?? [],
       getExport: () => this.getHistoryExport(),
       saveSettings: (input) => this.saveSnapshotSettings(input),
+      listImports: async () => this.snapshots?.imports() ?? [],
+      importDump: (input, remember) => this.importDump(input, remember),
+      deleteImport: async (id) => this.snapshots?.deleteImport(id) ?? false,
     });
 
     try {
@@ -114,6 +118,33 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       + `${graph.meta.weakLinkCount} weak`);
 
     return graph;
+  }
+
+  /** A saved snapshot or imported dump as a graph; null when there is none by that id. */
+  async getSnapshotGraph(id: string): Promise<Graph | null> {
+    const json = await this.snapshots?.read(id);
+    return json == null ? null : buildGraph(JSON.parse(json) as ZigbeeState);
+  }
+
+  /**
+   * The graph of a dump the user loaded in the browser. It is stripped of its
+   * secrets first, then kept beside the snapshots when `remember` is set. Null
+   * when it is not a Homey Zigbee dump.
+   */
+  async importDump(input: unknown, remember: boolean) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+    const dump = input as ZigbeeState;
+    if (!dump.nodes && !dump.controllerState) return null;
+
+    const stripped = stripSecrets(dump);
+    let graph: Graph;
+    try {
+      graph = buildGraph(dump);
+    } catch {
+      return null; // shaped like a dump, but not one buildGraph can read
+    }
+    const saved = remember ? await this.snapshots?.saveImport(dump) : undefined;
+    return { graph, stripped, id: saved?.id ?? null };
   }
 
   /** Validates, stores and applies new snapshot settings; null when they are not valid. */

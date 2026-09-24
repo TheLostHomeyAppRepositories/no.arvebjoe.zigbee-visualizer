@@ -75,6 +75,18 @@ function routesOf(state: ZigbeeState): Pick<SnapshotRoutes, 'parents' | 'names'>
 // its file is <id>.json. Sorting by name is sorting by time, so no index is needed.
 const ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
 
+// A dump the user loads in the browser is kept in the same folder, as
+// import-<id>.json. The prefix keeps it out of list(): it may be old, or from
+// another network, so it has no place in the timeline, the route history or the export.
+const IMPORT_PREFIX = 'import-';
+
+/** How many imported dumps are kept; the oldest go first. */
+export const KEEP_IMPORTS = 10;
+
+function isImportId(id: string): boolean {
+  return id.startsWith(IMPORT_PREFIX) && ID_PATTERN.test(id.slice(IMPORT_PREFIX.length));
+}
+
 function idFor(date: Date): string {
   return `${date.toISOString().slice(0, 19).replace(/:/g, '-')}Z`;
 }
@@ -147,13 +159,46 @@ export class Snapshots {
 
   /** Every snapshot on disk, oldest first. */
   async list(): Promise<SnapshotInfo[]> {
+    return this.filesWith('');
+  }
+
+  /** Every imported dump on disk, oldest first; takenAt is when it was imported. */
+  async imports(): Promise<SnapshotInfo[]> {
+    return this.filesWith(IMPORT_PREFIX);
+  }
+
+  /** Keeps a dump the user loaded, already stripped of its secrets, beside the snapshots. */
+  async saveImport(state: unknown): Promise<SnapshotInfo> {
+    const { dir, log } = this.options;
+    await fs.mkdir(dir, { recursive: true });
+    const now = new Date();
+    const id = `${IMPORT_PREFIX}${idFor(now)}`;
+    const file = path.join(dir, `${id}.json`);
+    await fs.writeFile(`${file}.tmp`, toSafeJson(state));
+    await fs.rename(`${file}.tmp`, file);
+    log(`Import saved: ${id}`);
+
+    const all = await this.imports();
+    const extra = all.slice(0, Math.max(0, all.length - KEEP_IMPORTS));
+    await Promise.all(extra.map((s) => fs.unlink(path.join(dir, `${s.id}.json`))));
+    return { id, takenAt: dateOf(idFor(now)).toISOString() };
+  }
+
+  /** Deletes one imported dump; false when there is no such import. Snapshots can't be deleted this way. */
+  async deleteImport(id: string): Promise<boolean> {
+    if (!isImportId(id)) return false;
+    return fs.unlink(path.join(this.options.dir, `${id}.json`)).then(() => true, () => false);
+  }
+
+  /** The files in the folder whose id is `prefix` plus a time, oldest first. */
+  private async filesWith(prefix: string): Promise<SnapshotInfo[]> {
     const names = await fs.readdir(this.options.dir).catch(() => [] as string[]);
     return names
-      .filter((name) => name.endsWith('.json'))
+      .filter((name) => name.startsWith(prefix) && name.endsWith('.json'))
       .map((name) => name.slice(0, -'.json'.length))
-      .filter((id) => ID_PATTERN.test(id))
+      .filter((id) => ID_PATTERN.test(id.slice(prefix.length)))
       .sort()
-      .map((id) => ({ id, takenAt: dateOf(id).toISOString() }));
+      .map((id) => ({ id, takenAt: dateOf(id.slice(prefix.length)).toISOString() }));
   }
 
   /** The list plus what the page needs around it: the settings, and how long an hour is. */
@@ -209,10 +254,10 @@ export class Snapshots {
     return states.filter((s): s is { takenAt: string; state: ZigbeeState } => s !== null);
   }
 
-  /** One snapshot's JSON text, or null if there is no such snapshot. */
+  /** One snapshot's or imported dump's JSON text, or null if there is no such thing. */
   async read(id: string): Promise<string | null> {
     // The pattern also keeps an id like "../app" from reaching outside the folder.
-    if (!ID_PATTERN.test(id)) return null;
+    if (!ID_PATTERN.test(id) && !isImportId(id)) return null;
     return fs.readFile(path.join(this.options.dir, `${id}.json`), 'utf8').catch(() => null);
   }
 

@@ -4,25 +4,42 @@ import fs from 'fs';
 import http from 'http';
 import net from 'net';
 import path from 'path';
-import toSafeJson from './safe-json';
 
-/** What app.ts hands the server when it starts it. */
+/**
+ * What app.ts hands the server when it starts it. The page gets graphs, never
+ * raw Zigbee state: the graph is built here, by the same code as the settings page's.
+ */
 export type WebServerOptions = {
   port: number;
   log: (message: string) => void;
-  /** The raw Zigbee state, fetched fresh for every request. */
-  getState: () => Promise<unknown>;
+  /** The live network as a graph, built fresh for every request. */
+  getGraph: () => Promise<unknown>;
   /** Every saved snapshot, oldest first, with the interval the page needs to label them. */
   listSnapshots: () => Promise<unknown>;
-  /** One snapshot's JSON text, or null if there is no such snapshot. */
-  readSnapshot: (id: string) => Promise<string | null>;
+  /** One snapshot or imported dump as a graph, or null if there is no such thing. */
+  readGraph: (id: string) => Promise<unknown | null>;
   /** Who was whose parent in every snapshot, oldest first. */
   listRoutes: () => Promise<unknown>;
   /** Every snapshot plus the live state, summarised for analysis, as JSON text. */
   getExport: () => Promise<string>;
   /** Validates and applies new snapshot settings; resolves to null when they are not valid. */
   saveSettings: (input: unknown) => Promise<unknown>;
+  /** Every imported dump kept on the Homey, oldest first. */
+  listImports: () => Promise<unknown>;
+  /**
+   * Strips a dump the user loaded of its secrets and builds its graph, keeping
+   * it when `remember` is set; resolves to null when it is not a Zigbee dump.
+   */
+  importDump: (input: unknown, remember: boolean) => Promise<unknown | null>;
+  /** Deletes one imported dump; false when there is no such import. */
+  deleteImport: (id: string) => Promise<boolean>;
 };
+
+/** The most a settings change may send. */
+const SETTINGS_LIMIT = 10 * 1024;
+
+/** The most a dump may weigh: a large network's is a few MB. */
+const DUMP_LIMIT = 16 * 1024 * 1024;
 
 /** The page, its styles and its scripts; web/ sits next to lib/ in the app. */
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -83,11 +100,11 @@ function serveFile(req: http.IncomingMessage, res: http.ServerResponse) {
   });
 }
 
-/** Answers with the live Zigbee state, minus its secrets. */
-function serveState(res: http.ServerResponse, { getState, log }: WebServerOptions) {
-  getState()
-    .then((state) => {
-      send(res, 200, 'application/json; charset=utf-8', toSafeJson(state));
+/** Answers with the live network as a graph. */
+function serveGraph(res: http.ServerResponse, { getGraph, log }: WebServerOptions) {
+  getGraph()
+    .then((graph) => {
+      send(res, 200, 'application/json; charset=utf-8', JSON.stringify(graph));
     })
     .catch((err: Error) => {
       log(`Could not read the Zigbee state: ${err.message}`);
@@ -95,9 +112,9 @@ function serveState(res: http.ServerResponse, { getState, log }: WebServerOption
     });
 }
 
-/** Answers with the list of snapshots, or with one snapshot when there is an id. */
+/** Answers with the list of snapshots, or with one snapshot's graph when there is an id. */
 function serveSnapshots(res: http.ServerResponse, id: string | undefined, options: WebServerOptions) {
-  const { listSnapshots, readSnapshot, log } = options;
+  const { listSnapshots, readGraph, log } = options;
   const fail = (err: Error) => {
     log(`Could not read the snapshots: ${err.message}`);
     send(res, 500, 'text/plain; charset=utf-8', 'Could not read the snapshots');
@@ -109,12 +126,35 @@ function serveSnapshots(res: http.ServerResponse, id: string | undefined, option
       .catch(fail);
     return;
   }
-  readSnapshot(id)
-    .then((json) => {
-      if (json === null) send(res, 404, 'text/plain; charset=utf-8', 'No such snapshot');
-      else send(res, 200, 'application/json; charset=utf-8', json);
+  readGraph(id)
+    .then((graph) => {
+      if (graph === null) send(res, 404, 'text/plain; charset=utf-8', 'No such snapshot');
+      else send(res, 200, 'application/json; charset=utf-8', JSON.stringify(graph));
     })
     .catch(fail);
+}
+
+/** Answers with the imported dumps kept on the Homey. */
+function serveImports(res: http.ServerResponse, { listImports, log }: WebServerOptions) {
+  listImports()
+    .then((list) => send(res, 200, 'application/json; charset=utf-8', JSON.stringify(list)))
+    .catch((err: Error) => {
+      log(`Could not read the imports: ${err.message}`);
+      send(res, 500, 'text/plain; charset=utf-8', 'Could not read the imports');
+    });
+}
+
+/** Deletes one imported dump. */
+function serveDeleteImport(res: http.ServerResponse, id: string, { deleteImport, log }: WebServerOptions) {
+  deleteImport(id)
+    .then((deleted) => {
+      if (deleted) send(res, 200, 'application/json; charset=utf-8', '{}');
+      else send(res, 404, 'text/plain; charset=utf-8', 'No such import');
+    })
+    .catch((err: Error) => {
+      log(`Could not delete the import: ${err.message}`);
+      send(res, 500, 'text/plain; charset=utf-8', 'Could not delete the import');
+    });
 }
 
 /** Answers with who was whose parent in every snapshot. */
@@ -144,14 +184,14 @@ function serveExport(res: http.ServerResponse, { getExport, log }: WebServerOpti
     });
 }
 
-/** Reads a small JSON request body; anything over 10 kB, or not JSON, is refused. */
-function readJson(req: http.IncomingMessage): Promise<unknown> {
+/** Reads a JSON request body; anything over `limit` characters, or not JSON, is refused. */
+function readJson(req: http.IncomingMessage, limit: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = '';
     req.setEncoding('utf8');
     req.on('data', (chunk: string) => {
       body += chunk;
-      if (body.length > 10 * 1024) {
+      if (body.length > limit) {
         reject(new Error('Request body too large'));
         req.destroy();
       }
@@ -167,19 +207,25 @@ function readJson(req: http.IncomingMessage): Promise<unknown> {
   });
 }
 
+/**
+ * Whether a POST carries JSON, answering 415 when it doesn't. Only a page on this
+ * server can send JSON here: another site's page cannot set this Content-Type
+ * without a CORS preflight, which this server never approves. A site that rebinds
+ * its own domain to this Homey gets past that, but not past isLocalHost, which
+ * already turned it away.
+ */
+function isJsonPost(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (req.headers['content-type'] === 'application/json') return true;
+  send(res, 415, 'text/plain; charset=utf-8', 'Expected application/json');
+  return false;
+}
+
 /** Saves new snapshot settings sent by the page, and answers with what was saved. */
 function serveSettings(req: http.IncomingMessage, res: http.ServerResponse, { saveSettings, log }: WebServerOptions) {
-  // Only a page on this server can send JSON here: another site's page cannot set
-  // this Content-Type without a CORS preflight, which this server never approves.
-  // A site that rebinds its own domain to this Homey gets past that, but not past
-  // isLocalHost, which already turned it away.
-  if (req.headers['content-type'] !== 'application/json') {
-    send(res, 415, 'text/plain; charset=utf-8', 'Expected application/json');
-    return;
-  }
+  if (!isJsonPost(req, res)) return;
   // 400 only for what the page sent; a failure on this side is a 500, so the
   // page doesn't tell the user to fix settings that were fine.
-  readJson(req).then(
+  readJson(req, SETTINGS_LIMIT).then(
     (input) => saveSettings(input).then(
       (saved) => {
         if (saved === null) send(res, 400, 'text/plain; charset=utf-8', 'Invalid settings');
@@ -194,6 +240,26 @@ function serveSettings(req: http.IncomingMessage, res: http.ServerResponse, { sa
   );
 }
 
+/** Builds the graph of a dump the user loaded, keeping the dump when asked to. */
+function serveImport(
+  req: http.IncomingMessage, res: http.ServerResponse, remember: boolean, { importDump, log }: WebServerOptions,
+) {
+  if (!isJsonPost(req, res)) return;
+  readJson(req, DUMP_LIMIT).then(
+    (input) => importDump(input, remember).then(
+      (result) => {
+        if (result === null) send(res, 400, 'text/plain; charset=utf-8', 'That does not look like a Homey Zigbee dump');
+        else send(res, 200, 'application/json; charset=utf-8', JSON.stringify(result));
+      },
+      (err: Error) => {
+        log(`Could not import the dump: ${err.message}`);
+        send(res, 500, 'text/plain; charset=utf-8', 'Could not import the dump');
+      },
+    ),
+    () => send(res, 400, 'text/plain; charset=utf-8', 'That is not valid JSON, or it is over 16 MB'),
+  );
+}
+
 /** A small web server on the local network, next to Homey's own. */
 export function startWebServer(options: WebServerOptions): http.Server {
   const { port, log } = options;
@@ -202,20 +268,34 @@ export function startWebServer(options: WebServerOptions): http.Server {
       send(res, 403, 'text/plain; charset=utf-8', 'Open the visualizer by the Homey\'s IP address');
       return;
     }
-    if (req.method === 'POST' && req.url === '/api/settings') {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const { pathname } = url;
+    // /api/snapshots is the list, /api/snapshots/<id> is one of them; the same for imports.
+    const snapshot = pathname.match(/^\/api\/snapshots(?:\/([^/]+))?$/);
+    const imported = pathname.match(/^\/api\/imports(?:\/([^/]+))?$/);
+
+    if (req.method === 'POST' && pathname === '/api/settings') {
       serveSettings(req, res, options);
+      return;
+    }
+    if (req.method === 'POST' && imported && !imported[1]) {
+      serveImport(req, res, url.searchParams.get('remember') === '1', options);
+      return;
+    }
+    if (req.method === 'DELETE' && imported?.[1]) {
+      serveDeleteImport(res, imported[1], options);
       return;
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       send(res, 405, 'text/plain; charset=utf-8', 'Method not allowed');
       return;
     }
-    // /api/snapshots is the list, /api/snapshots/<id> is one of them.
-    const snapshot = req.url?.match(/^\/api\/snapshots(?:\/([^/?]+))?$/);
-    if (req.url === '/api/state') serveState(res, options);
+    if (pathname === '/api/graph') serveGraph(res, options);
     else if (snapshot) serveSnapshots(res, snapshot[1], options);
-    else if (req.url === '/api/routes') serveRoutes(res, options);
-    else if (req.url === '/api/export') serveExport(res, options);
+    else if (imported?.[1]) serveSnapshots(res, imported[1], options);
+    else if (imported) serveImports(res, options);
+    else if (pathname === '/api/routes') serveRoutes(res, options);
+    else if (pathname === '/api/export') serveExport(res, options);
     else serveFile(req, res);
   });
 
