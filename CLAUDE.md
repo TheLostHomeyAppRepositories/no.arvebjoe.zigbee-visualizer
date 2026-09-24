@@ -74,11 +74,13 @@ exercised outside a Homey: compile them to a scratch folder with
 `startWebServer()` or `Snapshots` from a small Node script with fake callbacks and a fake `homey`
 (`setTimeout`, `clearTimeout`, `clock.getTimezone`).
 
-### Line endings on Windows
+### Line endings
 
-Committed files are LF. A checkout with `core.autocrlf=true` turns them into CRLF, and ESLint then
-reports `linebreak-style` on every line. That is the checkout, not the code; lint locally with
-`--rule 'linebreak-style: off'` to see the real findings.
+`.gitattributes` (`* text=auto eol=lf`) keeps every text file LF in the working tree, on Windows too,
+overriding `core.autocrlf` (Git for Windows sets it to `true` system-wide). Don't drop it: the Homey CLI
+rewrites `app.json` with LF on every build, which a CRLF checkout shows as modified forever, and ESLint's
+`linebreak-style` reports every line of a CRLF file. A clone made before the file existed needs one
+re-checkout (`git rm --cached -r . && git reset --hard`, on a clean tree).
 
 ### `homey app create` is broken upstream — do not re-run it
 
