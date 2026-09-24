@@ -1,5 +1,6 @@
 'use strict';
 
+import type http from 'http';
 import Homey from 'homey';
 import { HomeyAPI } from 'homey-api';
 import { buildGraph, Graph, ZigbeeState } from './lib/zigbee-graph';
@@ -34,12 +35,15 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
   /** The history of the Zigbee state; set up in onInit. */
   private snapshots?: Snapshots;
 
+  /** The visualizer's web server; started in onInit, closed in onUninit. */
+  private webServer?: http.Server;
+
   /**
    * onInit is called when the app is initialized.
    */
   async onInit() {
     this.log('Zigbee Visualizer has been initialized');
-    startWebServer({
+    this.webServer = startWebServer({
       port: WEB_PORT,
       log: this.log.bind(this),
       getGraph: () => this.getZigbeeGraph(),
@@ -75,6 +79,14 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
    */
   async onUninit() {
     this.snapshots?.stop();
+    const server = this.webServer;
+    this.webServer = undefined;
+    if (!server) return;
+    // close() only stops new connections; an open keep-alive one would hold it up.
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
   }
 
   /**
