@@ -7,6 +7,7 @@ import { startWebServer } from './lib/web-server';
 import {
   DEFAULT_SETTINGS, SnapshotSettings, Snapshots, toSettings,
 } from './lib/snapshots';
+import buildExport from './lib/export';
 
 /** The visualizer's port: 8154, after IEEE 802.15.4, the radio under Zigbee. */
 const WEB_PORT = 8154;
@@ -44,6 +45,7 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       listSnapshots: async () => this.snapshots?.overview() ?? { snapshots: [] },
       readSnapshot: async (id) => this.snapshots?.read(id) ?? null,
       listRoutes: async () => this.snapshots?.routes() ?? [],
+      getExport: () => this.getHistoryExport(),
       saveSettings: (input) => this.saveSnapshotSettings(input),
     });
 
@@ -122,6 +124,17 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
     this.log(`Snapshot settings saved: ${JSON.stringify(settings)}`);
     await this.snapshots?.update(settings);
     return settings;
+  }
+
+  /** Every snapshot plus the live state, summarised for analysis, as the text of a JSON file. */
+  async getHistoryExport(): Promise<string> {
+    const saved = (await this.snapshots?.states()) ?? [];
+    const points = [
+      ...saved.map((s) => ({ ...s, live: false })),
+      { takenAt: new Date().toISOString(), live: true, state: await this.getZigbeeState() },
+    ];
+    const { intervalHours } = toSettings(this.homey.settings.get(SETTINGS_KEY)) ?? DEFAULT_SETTINGS;
+    return JSON.stringify(buildExport(points, { timezone: this.homey.clock.getTimezone(), intervalHours }), null, 2);
   }
 
   /** Where the visualizer opens on the local network, e.g. http://192.168.1.50:8154/. */

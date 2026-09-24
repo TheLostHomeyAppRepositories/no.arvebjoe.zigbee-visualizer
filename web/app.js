@@ -232,6 +232,11 @@ function renderStats() {
   ];
   if (m.weakLinkCount) items.push(['Weak links', `<span class="stat-warn">${m.weakLinkCount}</span>`]);
   if (m.ghostCount) items.push(['Stale', m.ghostCount]);
+  const conflicts = sharedAddresses().length;
+  if (conflicts) {
+    items.push(['Conflicts', `<button type="button" class="stat-link stat-warn" id="conflictsStat"
+      title="Show the devices that share a network address">${conflicts}</button>`]);
+  }
   document.getElementById('netstats').innerHTML = items
     .map(([k, v]) => `<div class="netstat"><div class="v">${v}</div><div class="k">${k}</div></div>`)
     .join('');
@@ -269,7 +274,7 @@ function pathLinkSet(node) {
 function matches(node) {
   if (!state.query) return false;
   const q = state.query.toLowerCase();
-  return [node.name, node.modelId, node.manufacturerName, node.ieeeAddr, String(node.addr), `0x${node.addr.toString(16)}`]
+  return [node.name, node.modelId, node.manufacturerName, node.ieeeAddr, String(node.nwkAddr), `0x${node.nwkAddr.toString(16)}`]
     .some((v) => v && String(v).toLowerCase().includes(q));
 }
 
@@ -564,7 +569,7 @@ function showTooltip(event, d) {
   tooltip.html(`
     <div class="t-name">${escapeHtml(d.name)}</div>
     <div class="t-meta">${escapeHtml(d.modelId || 'unknown model')}<br>
-    0x${d.addr.toString(16)} · ${d.type}${d.hops != null ? ` · ${d.hops} hop${d.hops === 1 ? '' : 's'}` : ' · no route'}</div>
+    0x${d.nwkAddr.toString(16)} · ${d.type}${d.hops != null ? ` · ${d.hops} hop${d.hops === 1 ? '' : 's'}` : ' · no route'}</div>
   `).style('opacity', 1);
   moveTooltip(event);
 }
@@ -732,6 +737,7 @@ function renderPanel(n) {
   if (n.descendantCount) badges.push(`<span class="badge">relays ${n.descendantCount}</span>`);
   if (n.isGhost) badges.push('<span class="badge warn">stale route entry</span>');
   if (!n.hasRoute && !n.isCoordinator && !n.isGhost) badges.push('<span class="badge danger">no route</span>');
+  if (n.sharedWith) badges.push(`<span class="badge warn">address shared with ${escapeHtml(n.sharedWith.join(', '))}</span>`);
 
   sections.push(`
     <div class="p-head">
@@ -753,7 +759,7 @@ function renderPanel(n) {
 
   // --- identity
   const rows = [
-    ['Network addr', `<span class="mono">0x${n.addr.toString(16).padStart(4, '0')} (${n.addr})</span>`],
+    ['Network addr', `<span class="mono">0x${n.nwkAddr.toString(16).padStart(4, '0')} (${n.nwkAddr})</span>`],
     ['IEEE addr', n.ieeeAddr ? `<span class="mono">${n.ieeeAddr}</span>` : '—'],
     ['Device type', n.isCoordinator ? 'coordinator' : n.type],
     ['Firmware', n.swBuildId || '—'],
@@ -916,7 +922,10 @@ function escapeHtml(str) {
 
 // ------------------------------------------------------------ interaction --
 
-svg.on('click', clearSelection);
+svg.on('click', () => {
+  clearSelection();
+  clearConflictSearch();
+});
 
 document.getElementById('panel').addEventListener('click', (e) => {
   const tab = e.target.closest('[data-tab]');
@@ -934,6 +943,37 @@ document.getElementById('search').addEventListener('input', (e) => {
   state.query = e.target.value.trim();
   applyHighlight();
 });
+
+/** The network addresses more than one device reports, in the graph on screen. */
+function sharedAddresses() {
+  return [...new Set(state.graph.nodes.filter((n) => n.sharedWith).map((n) => n.nwkAddr))];
+}
+
+// Clicking the Conflicts counter searches for the next shared address, so the
+// devices that report it light up together.
+let conflictIndex = 0;
+let conflictQuery = null; // what the counter put in the search box, until it is cleared
+document.getElementById('netstats').addEventListener('click', (e) => {
+  if (!e.target.closest('#conflictsStat')) return;
+  const shared = sharedAddresses();
+  if (!shared.length) return;
+  if (state.selected != null) clearSelection();
+  const search = document.getElementById('search');
+  search.value = String(shared[conflictIndex % shared.length]);
+  conflictQuery = search.value;
+  conflictIndex += 1;
+  search.dispatchEvent(new Event('input'));
+});
+
+/** Empties the search again, but only while it still holds what the Conflicts counter put there. */
+function clearConflictSearch() {
+  const search = document.getElementById('search');
+  if (conflictQuery === null || search.value !== conflictQuery) return;
+  conflictQuery = null;
+  search.value = '';
+  search.dispatchEvent(new Event('input'));
+}
+
 document.getElementById('showBindings').addEventListener('change', (e) => {
   state.showBindings = e.target.checked; render();
 });
@@ -987,7 +1027,10 @@ window.addEventListener('resize', () => { if (state.graph) render(); });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!loader.hidden) closeLoader();
-  else clearSelection();
+  else {
+    clearSelection();
+    clearConflictSearch();
+  }
 });
 
 // ------------------------------------------------------- loading the dump --
@@ -1171,6 +1214,11 @@ hsInterval.addEventListener('change', () => {
 });
 
 document.getElementById('hsCancel').addEventListener('click', () => { hsPanel.hidden = true; });
+
+// The server answers /api/export as a file to save, so the page itself stays where it is.
+document.getElementById('historyDownload').addEventListener('click', () => {
+  window.location.assign('api/export');
+});
 
 document.getElementById('hsSave').addEventListener('click', () => {
   fetch('api/settings', {

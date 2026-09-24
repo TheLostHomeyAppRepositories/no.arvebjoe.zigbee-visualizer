@@ -1105,7 +1105,7 @@
         if (downlinks) sections.push(downlinks);
 
         var rows = [
-          ['Network addr', '<span class="mono">0x' + n.addr.toString(16).padStart(4, '0') + ' (' + n.addr + ')</span>'],
+          ['Network addr', '<span class="mono">0x' + n.nwkAddr.toString(16).padStart(4, '0') + ' (' + n.nwkAddr + ')</span>'],
           ['IEEE addr', n.ieeeAddr ? '<span class="mono">' + escapeHtml(n.ieeeAddr) + '</span>' : '—'],
           ['Device type', n.isCoordinator ? 'controller' : escapeHtml(n.type)],
           ['Firmware', escapeHtml(n.swBuildId || '—')],

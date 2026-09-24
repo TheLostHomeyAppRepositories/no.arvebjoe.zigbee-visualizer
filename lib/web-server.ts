@@ -17,6 +17,8 @@ export type WebServerOptions = {
   readSnapshot: (id: string) => Promise<string | null>;
   /** Who was whose parent in every snapshot, oldest first. */
   listRoutes: () => Promise<unknown>;
+  /** Every snapshot plus the live state, summarised for analysis, as JSON text. */
+  getExport: () => Promise<string>;
   /** Validates and applies new snapshot settings; resolves to null when they are not valid. */
   saveSettings: (input: unknown) => Promise<unknown>;
 };
@@ -101,6 +103,23 @@ function serveRoutes(res: http.ServerResponse, { listRoutes, log }: WebServerOpt
     });
 }
 
+/** Answers with the whole history, summarised, as a file to save. */
+function serveExport(res: http.ServerResponse, { getExport, log }: WebServerOptions) {
+  getExport()
+    .then((json) => {
+      const stamp = new Date().toISOString().slice(0, 16).replace(':', '-');
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="zigbee-history-${stamp}Z.json"`,
+      });
+      res.end(json);
+    })
+    .catch((err: Error) => {
+      log(`Could not build the export: ${err.message}`);
+      send(res, 500, 'text/plain; charset=utf-8', 'Could not build the export');
+    });
+}
+
 /** Reads a small JSON request body; anything over 10 kB, or not JSON, is refused. */
 function readJson(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -161,6 +180,7 @@ export function startWebServer(options: WebServerOptions): http.Server {
     if (req.url === '/api/state') serveState(res, options);
     else if (snapshot) serveSnapshots(res, snapshot[1], options);
     else if (req.url === '/api/routes') serveRoutes(res, options);
+    else if (req.url === '/api/export') serveExport(res, options);
     else serveFile(req, res);
   });
 

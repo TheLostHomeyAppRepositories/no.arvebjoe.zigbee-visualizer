@@ -51,6 +51,7 @@ export type RawZigbeeNode = {
   stats?: { tx?: number; txSuccess?: number; txError?: number; rx?: number };
   capabilities?: Record<string, boolean> | null;
   endpointDescriptors?: Array<{
+    nwkAddrOfInterest?: number;
     endpointId?: number;
     applicationProfileId?: number;
     applicationDeviceId?: number;
@@ -81,7 +82,12 @@ export type ZigbeeState = {
 };
 
 export type GraphNode = {
+  /** The node's id in the graph: its network address, unless another device has that too. */
   addr: number;
+  /** The network address the device reports. */
+  nwkAddr: number;
+  /** The devices that report the same network address, if any. */
+  sharedWith?: string[];
   ieeeAddr: string | null;
   name: string;
   type: string;
@@ -163,12 +169,18 @@ export function gradeFor(rate: number | null, sample: number): Grade {
   return (GRADES.find((g) => rate >= g.min) ?? GRADES[GRADES.length - 1]).grade;
 }
 
+/** The network address a device had when Homey interviewed it, if it says. */
+function interviewAddr(node: RawZigbeeNode): number | undefined {
+  return node.endpointDescriptors?.find((ep) => ep.nwkAddrOfInterest != null)?.nwkAddrOfInterest;
+}
+
 function buildNode(addr: number, ieee: string, node: RawZigbeeNode): GraphNode {
   const stats = node.stats ?? {};
   const tx = stats.tx ?? 0;
   const txSuccess = stats.txSuccess ?? 0;
   return {
     addr,
+    nwkAddr: addr,
     ieeeAddr: ieee,
     name: node.name || node.modelId || `0x${addr.toString(16)}`,
     type: node.type || node.deviceType || 'unknown',
@@ -210,6 +222,7 @@ function buildNode(addr: number, ieee: string, node: RawZigbeeNode): GraphNode {
 function ghostNode(addr: number): GraphNode {
   return {
     addr,
+    nwkAddr: addr,
     ieeeAddr: null,
     name: `Unknown 0x${addr.toString(16)}`,
     type: 'ghost',
@@ -238,10 +251,27 @@ export function buildGraph(state: ZigbeeState): Graph {
 
   const byAddr = new Map<number, GraphNode>();
 
+  // Two devices can report the same network address: a conflict, or a record
+  // Homey never updated. The route belongs to the address, so it goes to one of
+  // them: the one that already had the address when Homey interviewed it, else
+  // the first. The other stays in the graph under an id of its own, without a route.
+  let spareId = -1;
   Object.entries(rawNodes).forEach(([ieee, node]) => {
     const addr = node.nwkAddr ?? node.networkAddress;
     if (addr == null) return;
-    byAddr.set(addr, buildNode(addr, ieee, node));
+    const built = buildNode(addr, ieee, node);
+    const holder = byAddr.get(addr);
+    if (!holder) {
+      byAddr.set(addr, built);
+      return;
+    }
+    const [keep, spare] = interviewAddr(node) === addr ? [built, holder] : [holder, built];
+    spare.addr = spareId;
+    spareId -= 1;
+    byAddr.set(addr, keep);
+    byAddr.set(spare.addr, spare);
+    keep.sharedWith = [...(keep.sharedWith ?? []), spare.name];
+    spare.sharedWith = [...(spare.sharedWith ?? []), keep.name];
   });
 
   // Devices that only exist in the routing table (stale entries left behind by

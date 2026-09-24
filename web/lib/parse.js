@@ -74,9 +74,26 @@ function parseDump(raw) {
 
   const byAddr = new Map();
 
+  // Two devices can report the same network address: a conflict, or a record
+  // Homey never updated. The route belongs to the address, so it goes to one of
+  // them: the one that already had the address when Homey interviewed it, else
+  // the first. The other stays on the map under an id of its own, without a route.
+  let spareId = -1;
   for (const [ieee, node] of Object.entries(rawNodes)) {
     const addr = node.nwkAddr ?? node.networkAddress;
-    byAddr.set(addr, buildNode(addr, ieee, node));
+    const built = buildNode(addr, ieee, node);
+    const holder = byAddr.get(addr);
+    if (!holder) {
+      byAddr.set(addr, built);
+      continue;
+    }
+    const [keep, spare] = interviewAddr(node) === addr ? [built, holder] : [holder, built];
+    spare.addr = spareId;
+    spareId -= 1;
+    byAddr.set(addr, keep);
+    byAddr.set(spare.addr, spare);
+    keep.sharedWith = [...(keep.sharedWith || []), spare.name];
+    spare.sharedWith = [...(spare.sharedWith || []), keep.name];
   }
 
   // Devices that only exist in the routing table (stale entries left behind by
@@ -192,12 +209,19 @@ function parseDump(raw) {
   };
 }
 
+/** The network address a device had when Homey interviewed it, if it says. */
+function interviewAddr(node) {
+  const ep = (node.endpointDescriptors || []).find((e) => e.nwkAddrOfInterest != null);
+  return ep ? ep.nwkAddrOfInterest : undefined;
+}
+
 function buildNode(addr, ieee, node) {
   const stats = node.stats || {};
   const tx = stats.tx || 0;
   const txSuccess = stats.txSuccess || 0;
   return {
     addr,
+    nwkAddr: addr, // what the device reports; addr is its id here, which differs for a shared address
     ieeeAddr: ieee,
     name: node.name || node.modelId || `0x${addr.toString(16)}`,
     type: node.type || node.deviceType || 'unknown',
@@ -236,6 +260,7 @@ function buildNode(addr, ieee, node) {
 function ghostNode(addr) {
   return {
     addr,
+    nwkAddr: addr,
     ieeeAddr: null,
     name: `Unknown 0x${addr.toString(16)}`,
     type: 'ghost',

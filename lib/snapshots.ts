@@ -183,6 +183,16 @@ export class Snapshots {
     return routes.filter((r): r is SnapshotRoutes => r !== null);
   }
 
+  /** Every snapshot, parsed, oldest first. */
+  async states(): Promise<Array<{ takenAt: string; state: ZigbeeState }>> {
+    const all = await this.list();
+    const states = await Promise.all(all.map(async (s) => {
+      const json = await this.read(s.id);
+      return json === null ? null : { takenAt: s.takenAt, state: JSON.parse(json) as ZigbeeState };
+    }));
+    return states.filter((s): s is { takenAt: string; state: ZigbeeState } => s !== null);
+  }
+
   /** One snapshot's JSON text, or null if there is no such snapshot. */
   async read(id: string): Promise<string | null> {
     // The pattern also keeps an id like "../app" from reaching outside the folder.
