@@ -4,9 +4,18 @@ import Homey from 'homey';
 import { HomeyAPI } from 'homey-api';
 import { buildGraph, Graph, ZigbeeState } from './lib/zigbee-graph';
 import { startWebServer } from './lib/web-server';
+import {
+  DEFAULT_SETTINGS, SnapshotSettings, Snapshots, toSettings,
+} from './lib/snapshots';
 
 /** The visualizer's port: 8154, after IEEE 802.15.4, the radio under Zigbee. */
 const WEB_PORT = 8154;
+
+/** Where the snapshots are kept: /userdata is the one folder an app may write to, and it survives updates. */
+const SNAPSHOT_DIR = '/userdata/snapshots';
+
+/** The key the snapshot settings are stored under in Homey's app settings. */
+const SETTINGS_KEY = 'snapshots';
 
 /** The slice of the Web API client this app uses. */
 type HomeyApiClient = {
@@ -20,6 +29,9 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
   /** Resolves to a HomeyAPI instance; created once, reused after that. */
   private homeyApi?: Promise<HomeyApiClient>;
 
+  /** The history of the Zigbee state; set up in onInit. */
+  private snapshots?: Snapshots;
+
   /**
    * onInit is called when the app is initialized.
    */
@@ -29,6 +41,9 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       port: WEB_PORT,
       log: this.log.bind(this),
       getState: () => this.getZigbeeState(),
+      listSnapshots: async () => this.snapshots?.overview() ?? { snapshots: [] },
+      readSnapshot: async (id) => this.snapshots?.read(id) ?? null,
+      saveSettings: (input) => this.saveSnapshotSettings(input),
     });
 
     try {
@@ -36,6 +51,23 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
     } catch (err) {
       this.log(`Could not read Homey's local address: ${(err as Error).message}`);
     }
+
+    this.snapshots = new Snapshots({
+      homey: this.homey,
+      dir: SNAPSHOT_DIR,
+      settings: toSettings(this.homey.settings.get(SETTINGS_KEY)) ?? DEFAULT_SETTINGS,
+      getState: () => this.getZigbeeState(),
+      log: this.log.bind(this),
+    });
+    this.snapshots.start()
+      .catch((err: Error) => this.log(`Snapshots could not start: ${err.message}`));
+  }
+
+  /**
+   * onUninit is called when the app is stopped or updated.
+   */
+  async onUninit() {
+    this.snapshots?.stop();
   }
 
   /**
@@ -79,6 +111,16 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       + `${graph.meta.weakLinkCount} weak`);
 
     return graph;
+  }
+
+  /** Validates, stores and applies new snapshot settings; null when they are not valid. */
+  async saveSnapshotSettings(input: unknown): Promise<SnapshotSettings | null> {
+    const settings = toSettings(input);
+    if (!settings) return null;
+    this.homey.settings.set(SETTINGS_KEY, settings);
+    this.log(`Snapshot settings saved: ${JSON.stringify(settings)}`);
+    await this.snapshots?.update(settings);
+    return settings;
   }
 
   /** Where the visualizer opens on the local network, e.g. http://192.168.1.50:8154/. */

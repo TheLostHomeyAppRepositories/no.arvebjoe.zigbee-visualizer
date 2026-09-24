@@ -34,6 +34,7 @@ const state = {
   loaderPinned: false,
   panelTab: 'quality',
   trafficScale: 'tx',
+  keepView: false, // true while a snapshot is swapped in: keep the current zoom and position
 };
 
 const svg = d3.select('#canvas');
@@ -462,7 +463,7 @@ function treeLayout(nodes, ringRadius, unrouted) {
     node.fy = node.y;
   }
   tick();
-  fitToView();
+  if (!state.keepView) fitToView();
 }
 
 function forceLayout(nodes, links, ringOf, ringGap) {
@@ -950,10 +951,11 @@ function readCollapsed() {
 }
 
 function setCollapsed(pane, collapsed) {
-  const [open, closed] = COLLAPSE_ICONS[pane.dataset.collapse] || COLLAPSE_ICONS.up;
+  // A direction without arrows (e.g. "icon") keeps the toggle's own content.
+  const icons = COLLAPSE_ICONS[pane.dataset.collapse];
   const toggle = pane.querySelector('.collapse-toggle');
   pane.classList.toggle('collapsed', collapsed);
-  toggle.textContent = collapsed ? closed : open;
+  if (icons) toggle.textContent = collapsed ? icons[1] : icons[0];
   toggle.title = collapsed ? 'Show' : 'Hide';
   toggle.setAttribute('aria-expanded', String(!collapsed));
 }
@@ -1049,3 +1051,98 @@ fetch('api/state')
   })
   .then((text) => submit(text, 'Homey (live)'))
   .catch(() => { if (!restore()) openLoader(true); });
+
+// ----------------------------------------------------------- history ----
+
+// The history pane: ● is the live state, then every snapshot, newest first,
+// labelled by how many hours back it is, in steps of the snapshot interval.
+const historyList = document.getElementById('historyList');
+let historyActive = ''; // '' is live, otherwise the id of the snapshot on screen
+
+let historySettings = null; // the snapshot settings, as last reported by the app
+
+function renderHistory({ enabled, intervalHours, keep, hourMs, snapshots }) {
+  historySettings = { enabled, intervalHours, keep };
+  const step = intervalHours * hourMs;
+  const items = [{ id: '', label: '●', title: 'Live' }].concat(snapshots.slice().reverse().map((s) => {
+    const back = Math.max(1, Math.ceil((Date.now() - Date.parse(s.takenAt)) / step)) * intervalHours;
+    return { id: s.id, label: `-${back}`, title: new Date(s.takenAt).toLocaleString() };
+  }));
+  historyList.innerHTML = items.map((it) => `<button type="button" data-snap="${it.id}"
+    class="history-item${it.id === historyActive ? ' active' : ''}" title="${escapeHtml(it.title)}">${it.label}</button>`).join('');
+}
+
+function loadHistory() {
+  fetch('api/snapshots')
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    .then(renderHistory)
+    .catch(() => { /* no history to show; the live view works without it */ });
+}
+
+historyList.addEventListener('click', (e) => {
+  const item = e.target.closest('[data-snap]');
+  if (!item) return;
+  const id = item.dataset.snap;
+  fetch(id ? `api/snapshots/${id}` : 'api/state')
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    })
+    .then((text) => {
+      historyActive = id;
+      // Only while this one snapshot is drawn, so Fit, resizing and the rest still refit.
+      state.keepView = true;
+      submit(text, id ? `Snapshot ${item.title} (${item.textContent} h)` : 'Homey (live)');
+      state.keepView = false;
+      loadHistory();
+    })
+    .catch((err) => toast(`Could not load that snapshot: ${err.message}`, 'warn'));
+});
+
+// New snapshots arrive on the interval, and the labels age with the clock.
+loadHistory();
+setInterval(loadHistory, 60 * 1000);
+
+// ------------------------------------------------------ history settings ----
+
+const hsPanel = document.getElementById('historySettingsPanel');
+const hsEnabled = document.getElementById('hsEnabled');
+const hsInterval = document.getElementById('hsInterval');
+const hsKeep = document.getElementById('hsKeep');
+const hsWarn = document.getElementById('hsWarn');
+
+// The gear opens the panel with the settings as they are now, and closes it again.
+document.getElementById('historySettings').addEventListener('click', () => {
+  if (!hsPanel.hidden || !historySettings) {
+    hsPanel.hidden = true;
+    return;
+  }
+  hsEnabled.checked = historySettings.enabled;
+  hsInterval.value = String(historySettings.intervalHours);
+  hsKeep.value = String(historySettings.keep);
+  hsWarn.hidden = true;
+  hsPanel.hidden = false;
+});
+
+hsInterval.addEventListener('change', () => {
+  hsWarn.hidden = Number(hsInterval.value) === historySettings.intervalHours;
+});
+
+document.getElementById('hsCancel').addEventListener('click', () => { hsPanel.hidden = true; });
+
+document.getElementById('hsSave').addEventListener('click', () => {
+  fetch('api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      enabled: hsEnabled.checked, intervalHours: Number(hsInterval.value), keep: Number(hsKeep.value),
+    }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(res.status === 400 ? 'keep must be a whole number from 2 to 24' : `HTTP ${res.status}`);
+      hsPanel.hidden = true;
+      toast('Snapshot settings saved', 'ok');
+      loadHistory();
+    })
+    .catch((err) => toast(`Could not save the settings: ${err.message}`, 'warn'));
+});

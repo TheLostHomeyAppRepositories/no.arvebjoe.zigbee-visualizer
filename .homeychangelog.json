@@ -10,5 +10,8 @@
   },
   "1.1.1": {
     "en": "Added webserver so the visualizer can be viewed in a browser."
+  },
+  "1.2.0": {
+    "en": "Added history mechanism: the visualizer can now show how the network looked at any time in the past, and snapshots can be saved for later comparison."
   }
 }

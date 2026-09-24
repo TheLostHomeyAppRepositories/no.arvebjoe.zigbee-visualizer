@@ -21,8 +21,7 @@
   form-action 'none';
   base-uri 'none'">
 <title>Zigbee Network Visualizer</title>
-<!-- Relative, like the scripts: a browser's default guess is /favicon.ico at the
-     domain root, which is the wrong place under a Pages project subpath. -->
+<!-- Relative, like the scripts, so the page works from any folder it is served from. -->
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -51,25 +50,59 @@
 <main>
   <div id="graph">
     <svg id="canvas"></svg>
-    <div class="legend collapsible" id="legend" data-collapse="up">
-      <div class="legend-title collapse-keep">Hops from controller<button class="collapse-toggle" type="button" aria-expanded="true">▲</button></div>
-      <div class="legend-row"><i class="swatch h0"></i>Controller</div>
-      <div class="legend-row"><i class="swatch h1"></i>1 hop (direct)</div>
-      <div class="legend-row"><i class="swatch h2"></i>2 hops</div>
-      <div class="legend-row"><i class="swatch h3"></i>3 hops</div>
-      <div class="legend-row"><i class="swatch h4"></i>4+ hops</div>
-      <div class="legend-sep"></div>
-      <div class="legend-title">Link quality</div>
-      <div class="legend-row"><i class="q-dot q-good"></i>Good — 95%+ TX success</div>
-      <div class="legend-row"><i class="q-dot q-fair"></i>Fair — 85–95%</div>
-      <div class="legend-row"><i class="q-dot q-weak"></i>Weak — 70–85%</div>
-      <div class="legend-row"><i class="q-dot q-bad"></i>Bad — under 70%</div>
-      <div class="legend-row"><i class="q-dot q-unknown"></i>Too little traffic to judge</div>
-      <div class="legend-note">Line thickness = traffic volume</div>
-      <div class="legend-sep"></div>
-      <div class="legend-row"><i class="shape square"></i>Router</div>
-      <div class="legend-row"><i class="shape circle"></i>End device</div>
-      <div class="legend-row"><i class="shape ghost"></i>Stale / unreachable</div>
+    <div class="overlays">
+      <div class="legend collapsible" id="legend" data-collapse="up">
+        <div class="legend-title collapse-keep">Hops from controller<button class="collapse-toggle" type="button" aria-expanded="true">▲</button></div>
+        <div class="legend-row"><i class="swatch h0"></i>Controller</div>
+        <div class="legend-row"><i class="swatch h1"></i>1 hop (direct)</div>
+        <div class="legend-row"><i class="swatch h2"></i>2 hops</div>
+        <div class="legend-row"><i class="swatch h3"></i>3 hops</div>
+        <div class="legend-row"><i class="swatch h4"></i>4+ hops</div>
+        <div class="legend-sep"></div>
+        <div class="legend-title">Link quality</div>
+        <div class="legend-row"><i class="q-dot q-good"></i>Good — 95%+ TX success</div>
+        <div class="legend-row"><i class="q-dot q-fair"></i>Fair — 85–95%</div>
+        <div class="legend-row"><i class="q-dot q-weak"></i>Weak — 70–85%</div>
+        <div class="legend-row"><i class="q-dot q-bad"></i>Bad — under 70%</div>
+        <div class="legend-row"><i class="q-dot q-unknown"></i>Too little traffic to judge</div>
+        <div class="legend-note">Line thickness = traffic volume</div>
+        <div class="legend-sep"></div>
+        <div class="legend-row"><i class="shape square"></i>Router</div>
+        <div class="legend-row"><i class="shape circle"></i>End device</div>
+        <div class="legend-row"><i class="shape ghost"></i>Stale / unreachable</div>
+      </div>
+      <div class="history collapsible" id="history" data-collapse="icon">
+        <button class="collapse-toggle collapse-keep" type="button" aria-expanded="true" aria-label="History"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>
+        <span class="history-sep"></span>
+        <button class="history-btn" id="historySettings" type="button" title="History settings" aria-label="History settings"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <span class="history-sep"></span>
+        <button class="history-btn" id="historyDownload" type="button" title="Download all snapshots" aria-label="Download all snapshots"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg></button>
+        <span class="history-sep"></span>
+        <div class="history-list" id="historyList">
+          <button class="history-item active" type="button" data-snap="" title="Live">●</button>
+        </div>
+        <div class="history-settings" id="historySettingsPanel" hidden>
+          <div>
+            <h2>Snapshot history</h2>
+            <p class="loader-sub">Saves the Zigbee state on the clock, so you can look back at it later.</p>
+          </div>
+          <label class="toggle"><input type="checkbox" id="hsEnabled"> Save snapshots</label>
+          <label class="hs-row">Every
+            <select id="hsInterval">
+              <option value="1">1 hour</option>
+              <option value="2">2 hours</option>
+              <option value="4">4 hours</option>
+              <option value="8">8 hours</option>
+            </select>
+          </label>
+          <label class="hs-row">Keep the last <input id="hsKeep" type="number" min="2" max="24" step="1"></label>
+          <p class="hs-warn" id="hsWarn" hidden>A new interval deletes the saved snapshots.</p>
+          <div class="hs-actions">
+            <button class="secondary-btn" id="hsCancel" type="button">Cancel</button>
+            <button class="primary-btn" id="hsSave" type="button">Save</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="hint" class="hint">Click a node to inspect it and trace its path back to the controller. Hover a link for its quality.</div>
   </div>
@@ -89,8 +122,8 @@
     <button id="loaderClose" class="loader-close" type="button" title="Close (Esc)" hidden>&times;</button>
     <h2>Load a Zigbee dump</h2>
     <p class="loader-sub">
-      Your dump never leaves this browser: it is read, stripped of its network key
-      and drawn here. Nothing is uploaded, nothing is written to disk.
+      A dump you load here never leaves this browser: it is read, stripped of its
+      network key and drawn here. Nothing is uploaded.
     </p>
 
     <div id="dropzone" class="dropzone">

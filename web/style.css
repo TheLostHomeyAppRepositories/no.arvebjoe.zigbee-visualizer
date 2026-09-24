@@ -98,8 +98,14 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
 .hint.ok { color: var(--accent); border-color: var(--accent-dim); }
 .hint.warn { color: var(--warn); border-color: #6b5320; }
 
-.legend {
+.overlays {
   position: absolute; top: 14px; left: 14px;
+  display: flex; align-items: flex-start; gap: 14px;
+  pointer-events: none;
+}
+.overlays > * { pointer-events: auto; }
+.legend {
+  position: relative;
   background: rgba(22,27,34,.9); border: 1px solid var(--border);
   border-radius: 8px; padding: 10px 12px; font-size: 11px; color: var(--text-dim);
   backdrop-filter: blur(6px);
@@ -129,6 +135,61 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
 .collapsible.collapsed > :not(.collapse-keep) { display: none; }
 .collapsible.collapsed > .collapse-keep { margin-bottom: 0; }
 .collapsible.collapsed .collapse-toggle { position: static; margin-left: 8px; }
+/* The legend keeps its full width when collapsed, so the pane beside it stays put:
+   its rows are flattened to zero height instead of taken out of the layout. */
+#legend.collapsed > :not(.collapse-keep) { display: block; height: 0; margin: 0; overflow: hidden; visibility: hidden; }
+#legend.collapsed > .legend-row:not(.collapse-keep) { display: flex; }
+#legend.collapsed .collapse-toggle { position: absolute; margin-left: 0; }
+/* The clock stays where it is, and a mouse click leaves no focus ring behind. */
+.history.collapsed .collapse-toggle { margin-left: 0; }
+.history button:focus:not(:focus-visible) { outline: none; }
+
+/* ---------- history ---------- */
+.history {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(22,27,34,.9); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; font-size: 11px; color: var(--text-dim);
+  backdrop-filter: blur(6px);
+}
+.history .collapse-toggle,
+.history-btn, .history-item {
+  position: static; margin: 0; padding: 0 2px; background: none; border: 0;
+  font: inherit; line-height: 1; color: var(--text-dim); cursor: pointer;
+  display: flex; align-items: center;
+}
+.history .collapse-toggle:hover, .history-btn:hover, .history-item:hover { color: var(--accent); }
+.history-item.active { color: var(--accent); }
+.history-sep { width: 1px; height: 14px; background: var(--border); }
+.history-list { display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
+.history-settings {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 5;
+  display: grid; gap: 12px; width: 280px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  font-size: 12px; color: var(--text-dim);
+}
+.history-settings[hidden] { display: none; }
+.history-settings h2 { font-size: 16px; margin: 0 0 6px; color: var(--text); }
+.history-settings .loader-sub { margin: 0; }
+.hs-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hs-row select, .hs-row input {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 6px 8px; font: inherit; outline: none;
+}
+.hs-row select:focus, .hs-row input:focus { border-color: var(--accent-dim); }
+.hs-row input { width: 60px; }
+.hs-warn { margin: 0; color: var(--warn); font-size: 11px; }
+.hs-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 2px; }
+.secondary-btn {
+  background: var(--bg-elev-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 7px 16px; font-size: 12px; cursor: pointer;
+}
+.secondary-btn:hover { border-color: var(--accent-dim); color: var(--accent); }
+.icon {
+  width: 14px; height: 14px; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
 
 /* ---------- graph elements ---------- */
 .ring { fill: none; stroke: #1e2633; stroke-width: 1px; }
