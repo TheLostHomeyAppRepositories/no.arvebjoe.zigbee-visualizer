@@ -1,3 +1,11 @@
 This is a diagnostic tool for your Zigbee network. It maps every device in the mesh, traces the route each one takes back to Homey hop by hop, and grades every link on how much of its traffic gets through on the first try. The weakest links are ranked worst first, so the trouble in your network is the first thing you see rather than something you have to go hunting for.
 
 That matters because most devices never reach Homey directly. They reach it through each other, and when a relay is overloaded, sitting too far from the next device, or gone entirely, everything behind it turns slow and unreliable or stops reporting altogether, with nothing anywhere to say why. Drawn out in front of you, the one device holding back a whole branch is obvious, and so is the fix: move it, replace it, or put something mains-powered in between.
+
+For the full visualizer, switch on Browser view at the bottom of the settings page. Homey itself then serves it on your local network, and on a computer the Browser button opens it in its own tab. There the map gets the whole screen, with a traffic overview of the busiest devices and panels you can fold away. It has no login, so anyone on your network can open it while it is on; switch it off again when you are done.
+
+A mesh changes over time, so a single picture only tells part of the story. Switch on the snapshot history with the gear in the browser view, and the app saves your network on the clock, every 1, 2, 4 or 8 hours, keeping up to 24 snapshots. Step back through them to see how the network looked, and see at a glance what changed: devices that switched parent, joined or left are marked on the map and listed per snapshot, and every device shows its route history, with a warning when it keeps switching parents. That kind of restlessness is often the first sign of a weak link.
+
+The app also points out problems Homey itself stays quiet about: two devices reporting the same network address, and old routes left behind by a device that rejoined, with a warning when Homey's record of that device looks out of date.
+
+When you want a second opinion, the download button saves the whole history as one file, summarised and explained so you can hand it straight to an AI assistant for analysis. The network key is never included, but device names are, so keep that in mind before you share it.

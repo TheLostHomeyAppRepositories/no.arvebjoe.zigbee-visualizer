@@ -1,6 +1,6 @@
 {
   "id": "no.arvebjoe.zigbee-visualizer",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "compatibility": ">=12.4.0",
   "sdk": 3,
   "brandColor": "#E8951F",
@@ -39,6 +39,10 @@
     "getZigbeeState": {
       "method": "GET",
       "path": "/state"
+    },
+    "getVisualizerUrl": {
+      "method": "GET",
+      "path": "/visualizer"
     }
   },
   "images": {
@@ -49,6 +53,13 @@
   "author": {
     "name": "Arve Bjørnerud",
     "email": "arvebjoe@hotmail.com"
+  },
+  "contributors": {
+    "developers": [
+      {
+        "name": "Danee de Kruijff"
+      }
+    ]
   },
   "source": "https://github.com/arvebjoe/no.arvebjoe.zigbee-visualizer",
   "bugs": {

@@ -377,6 +377,14 @@
       .q-text-bad { color: var(--q-bad); }
       .q-text-unknown { color: var(--text); opacity: .75; }
 
+      .webview { margin: 26px 0 0; padding-top: 14px; border-top: 1px solid var(--border); }
+      .webview .switch {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 16px; color: var(--text); cursor: pointer;
+      }
+      .webview input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+      .webview .note { margin-top: 8px; }
+
       .raw { margin: 26px 0 12px; }
       .raw summary {
         font-size: 16px; color: var(--text); cursor: pointer;
@@ -406,6 +414,7 @@
         <button class="pill" id="ghosts" type="button" aria-pressed="true">Stale routes</button>
         <button class="pill" id="bindings" type="button" aria-pressed="false" hidden>Bindings</button>
         <button class="pill" id="reload" type="button">Reload</button>
+        <button class="pill" id="open-browser" type="button" hidden>Browser</button>
       </div>
       <div class="status" id="status"></div>
     </div>
@@ -423,6 +432,18 @@
     </div>
 
     <div id="panel"></div>
+
+    <section class="webview">
+      <label class="switch"><input type="checkbox" id="web-server" disabled> Browser view</label>
+      <p class="note">
+        Serves the full visualizer, with the snapshot history, from this Homey to
+        a browser on your local network. There is no login: while it is on,
+        anyone on your network can open it.
+      </p>
+      <p class="note" id="web-server-at" hidden>
+        Open <span class="mono linkish" id="web-server-url"></span> in a browser.
+      </p>
+    </section>
 
     <details class="raw">
       <summary>Raw controller data</summary>
@@ -1104,7 +1125,7 @@
         if (downlinks) sections.push(downlinks);
 
         var rows = [
-          ['Network addr', '<span class="mono">0x' + n.addr.toString(16).padStart(4, '0') + ' (' + n.addr + ')</span>'],
+          ['Network addr', '<span class="mono">0x' + n.nwkAddr.toString(16).padStart(4, '0') + ' (' + n.nwkAddr + ')</span>'],
           ['IEEE addr', n.ieeeAddr ? '<span class="mono">' + escapeHtml(n.ieeeAddr) + '</span>' : '—'],
           ['Device type', n.isCoordinator ? 'controller' : escapeHtml(n.type)],
           ['Firmware', escapeHtml(n.swBuildId || '—')],
@@ -1349,6 +1370,48 @@
         document.getElementById('reload').addEventListener('click', load);
         document.getElementById('zoom-in').addEventListener('click', function () { zoomBy(1.3); });
         document.getElementById('zoom-out').addEventListener('click', function () { zoomBy(1 / 1.3); });
+
+        // The full visualizer runs on the Homey itself, and only while it is
+        // switched on here: it is served to anyone on the local network. Only
+        // the app knows its address. The Browser pill is offered only where a
+        // mouse or trackpad is the main input, i.e. on a PC.
+        var isDesktop = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        var webSwitch = document.getElementById('web-server');
+        var webUrl = null;
+
+        function showWebServer(on) {
+          webSwitch.checked = on;
+          document.getElementById('open-browser').hidden = !(on && webUrl && isDesktop);
+          document.getElementById('web-server-at').hidden = !(on && webUrl);
+          document.getElementById('web-server-url').textContent = webUrl || '';
+        }
+
+        function openWebView() {
+          if (webUrl) state.homey.openURL(webUrl);
+        }
+
+        state.homey.api('GET', '/visualizer', null, function (err, url) {
+          if (!err && url) webUrl = url;
+          state.homey.get('webServer', function (getErr, on) {
+            showWebServer(on === true);
+            webSwitch.disabled = false;
+          });
+        });
+        webSwitch.addEventListener('change', function () {
+          var on = webSwitch.checked;
+          webSwitch.disabled = true;
+          state.homey.set('webServer', on, function (err) {
+            webSwitch.disabled = false;
+            if (err) {
+              showWebServer(!on);
+              setStatus('Could not switch the browser view: ' + ((err && err.message) || err));
+              return;
+            }
+            showWebServer(on);
+          });
+        });
+        document.getElementById('open-browser').addEventListener('click', openWebView);
+        document.getElementById('web-server-url').addEventListener('click', openWebView);
 
         // Two ways in, because the toolbar pill is behind the overlay once the
         // graph is fullscreen — the one in the zoom bar never is.

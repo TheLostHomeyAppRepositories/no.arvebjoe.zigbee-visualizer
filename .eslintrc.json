@@ -1,5 +1,6 @@
 {
   "extends": "athom/homey-app",
+  "ignorePatterns": ["web/vendor/"],
   "settings": {
     "import/resolver": {
       "node": {
@@ -12,5 +13,19 @@
   },
   "rules": {
     "import/extensions": ["error", "ignorePackages", { "js": "never", "ts": "never" }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["web/**/*.js"],
+      "env": { "browser": true, "node": false },
+      "globals": { "d3": "readonly" },
+      "parserOptions": { "sourceType": "script", "project": null },
+      "rules": {
+        "@typescript-eslint/no-floating-promises": "off",
+        "@typescript-eslint/no-misused-promises": "off",
+        "homey-app/global-timers": "off",
+        "no-use-before-define": ["error", { "functions": false }]
+      }
+    }
+  ]
 }

@@ -7,5 +7,8 @@
   },
   "1.1.0": {
     "en": "Added fullscreen for the network map. On a phone held upright the map turns sideways, so turning the phone gives a wide view, and tapping a device shows its route to Homey in a panel beside the map."
+  },
+  "1.2.0": {
+    "en": "• Browser view: the full visualizer in its own browser tab, served by Homey on your local network. Switch it on at the bottom of the settings page; on a computer the Browser button then opens it. It has no login, so anyone on your network can open it while it is on.\n• Snapshot history: the app can save your Zigbee network every 1, 2, 4 or 8 hours, keeping up to 24. Switch it on with the gear in the browser view, then step back through the snapshots.\n• See what changed: devices that switched parent, joined or left are listed in a Changes tab and ringed on the map, and every device shows its route history, with a warning when it keeps switching parents.\n• Download the whole history as one file, summarised for analysis by an AI. The network key is never included.\n• Load a saved Zigbee dump in the browser view to look at it, and keep it on the Homey if you like.\n• Devices that share a network address are both shown now, with a Conflicts counter, and stale routes are linked to the device that most likely left them behind."
   }
 }

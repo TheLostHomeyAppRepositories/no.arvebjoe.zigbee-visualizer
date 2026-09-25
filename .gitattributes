@@ -1,0 +1,4 @@
+# LF in the working tree on every platform, as committed. The Homey CLI writes
+# app.json with LF on every build, and ESLint's linebreak-style wants LF; a
+# Windows checkout with core.autocrlf would otherwise turn every file CRLF.
+* text=auto eol=lf
