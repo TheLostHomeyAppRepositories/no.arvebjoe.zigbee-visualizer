@@ -33,6 +33,8 @@ export type WebServerOptions = {
   importDump: (input: unknown, remember: boolean) => Promise<unknown | null>;
   /** Deletes one imported dump; false when there is no such import. */
   deleteImport: (id: string) => Promise<boolean>;
+  /** Every network's raw state, secrets left out, as JSON text: for writing adapters for other networks. */
+  getProbe: () => Promise<string>;
 };
 
 /** The most a settings change may send. */
@@ -199,6 +201,23 @@ function serveExport(res: http.ServerResponse, { getExport, log }: WebServerOpti
     });
 }
 
+/** Answers with every network's raw state as a file to save. */
+function serveProbe(res: http.ServerResponse, { getProbe, log }: WebServerOptions) {
+  getProbe()
+    .then((json) => {
+      const stamp = new Date().toISOString().slice(0, 16).replace(':', '-');
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="network-probe-${stamp}Z.json"`,
+      });
+      res.end(json);
+    })
+    .catch((err: Error) => {
+      log(`Could not build the probe: ${err.message}`);
+      send(res, 500, 'text/plain; charset=utf-8', 'Could not build the probe');
+    });
+}
+
 /**
  * Whether a body announced as bigger than `limit` bytes was refused, with a 413.
  * The page's fetch always announces its size, so this answers before any of it is
@@ -330,6 +349,7 @@ export function startWebServer(options: WebServerOptions): http.Server {
     else if (imported) serveImports(res, options);
     else if (pathname === '/api/routes') serveRoutes(res, options);
     else if (pathname === '/api/export') serveExport(res, options);
+    else if (pathname === '/api/probe') serveProbe(res, options);
     else serveFile(req, res);
   });
 

@@ -504,3 +504,8 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
 .loader-msg.bad { color: var(--danger); }
 .loader-msg.warn { color: var(--warn); }
 .loader-msg.ok { color: var(--accent); }
+.probe {
+  margin: 16px 0 0; border-top: 1px solid var(--border); padding-top: 12px;
+  font-size: 11px; line-height: 1.6; color: var(--text-dim);
+}
+.probe a { color: var(--accent); }

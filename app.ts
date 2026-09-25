@@ -10,6 +10,7 @@ import {
 } from './lib/snapshots';
 import buildExport from './lib/export';
 import { stripSecrets } from './lib/safe-json';
+import buildProbe, { ProbeApi } from './lib/probe';
 
 /** The visualizer's port: 8154, after IEEE 802.15.4, the radio under Zigbee. */
 const WEB_PORT = 8154;
@@ -103,6 +104,7 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
       listImports: async () => this.snapshots?.imports() ?? [],
       importDump: (input, remember) => this.importDump(input, remember),
       deleteImport: async (id) => this.snapshots?.deleteImport(id) ?? false,
+      getProbe: () => this.getProbe(),
     });
 
     try {
@@ -213,6 +215,13 @@ module.exports = class ZigbeeVisualizerApp extends Homey.App {
     ];
     const { intervalHours } = toSettings(this.homey.settings.get(SETTINGS_KEY)) ?? DEFAULT_SETTINGS;
     return JSON.stringify(buildExport(points, { timezone: this.homey.clock.getTimezone(), intervalHours }), null, 2);
+  }
+
+  /** Every network's raw state, secrets left out, as the text of a JSON file: see lib/probe.ts. */
+  async getProbe(): Promise<string> {
+    const api = (await this.getApi()) as unknown as ProbeApi;
+    this.log('Building a raw network probe');
+    return buildProbe(api, { appVersion: this.homey.manifest.version, homeyVersion: this.homey.version });
   }
 
   /** Where the visualizer opens on the local network, e.g. http://192.168.1.50:8154/. */
