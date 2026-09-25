@@ -75,6 +75,18 @@ function routesOf(state: ZigbeeState): Pick<SnapshotRoutes, 'parents' | 'names'>
 // its file is <id>.json. Sorting by name is sorting by time, so no index is needed.
 const ID_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
 
+// A dump the user loads in the browser is kept in the same folder, as
+// import-<id>.json. The prefix keeps it out of list(): it may be old, or from
+// another network, so it has no place in the timeline, the route history or the export.
+const IMPORT_PREFIX = 'import-';
+
+/** How many imported dumps are kept; the oldest go first. */
+export const KEEP_IMPORTS = 10;
+
+function isImportId(id: string): boolean {
+  return id.startsWith(IMPORT_PREFIX) && ID_PATTERN.test(id.slice(IMPORT_PREFIX.length));
+}
+
 function idFor(date: Date): string {
   return `${date.toISOString().slice(0, 19).replace(/:/g, '-')}Z`;
 }
@@ -100,6 +112,12 @@ export class Snapshots {
 
   private timer?: NodeJS.Timeout;
 
+  /**
+   * Counts every stop(). A schedule remembers the count it started under, so one
+   * that was stopped while a snapshot was being taken can tell, and doesn't go on.
+   */
+  private run = 0;
+
   /** routesOf() per snapshot id: a saved snapshot never changes, so it is worked out once. */
   private routeCache = new Map<string, Pick<SnapshotRoutes, 'parents' | 'names'>>();
 
@@ -107,8 +125,14 @@ export class Snapshots {
     this.options = options;
   }
 
-  /** Takes a snapshot now if the latest is older than one slot, then one per slot. */
+  /**
+   * Takes a snapshot now if the latest is older than one slot, then one per slot.
+   * Resolves as soon as the schedule is set: the snapshot to catch up is taken
+   * after that, so a failed one is only logged and can't keep the schedule from starting.
+   */
   async start(): Promise<void> {
+    this.stop();
+    const { run } = this;
     const { dir, settings, log } = this.options;
     if (!settings.enabled) {
       log('Snapshots are off');
@@ -117,27 +141,64 @@ export class Snapshots {
     await fs.mkdir(dir, { recursive: true });
 
     const latest = (await this.list()).pop();
-    const slot = settings.intervalHours * HOUR_MS;
-    if (!latest || Date.now() - Date.parse(latest.takenAt) >= slot) await this.take();
-
+    if (run !== this.run) return; // stopped or restarted meanwhile
     log(`Snapshots every ${settings.intervalHours} h, keeping ${settings.keep}`);
-    this.scheduleNext();
+    this.scheduleNext(run);
+
+    const slot = settings.intervalHours * HOUR_MS;
+    if (!latest || Date.now() - Date.parse(latest.takenAt) >= slot) {
+      this.take(run).catch((err: Error) => log(`Snapshot failed: ${err.message}`));
+    }
   }
 
   stop(): void {
     if (this.timer) this.options.homey.clearTimeout(this.timer);
     this.timer = undefined;
+    this.run += 1;
   }
 
   /** Every snapshot on disk, oldest first. */
   async list(): Promise<SnapshotInfo[]> {
+    return this.filesWith('');
+  }
+
+  /** Every imported dump on disk, oldest first; takenAt is when it was imported. */
+  async imports(): Promise<SnapshotInfo[]> {
+    return this.filesWith(IMPORT_PREFIX);
+  }
+
+  /** Keeps a dump the user loaded, already stripped of its secrets, beside the snapshots. */
+  async saveImport(state: unknown): Promise<SnapshotInfo> {
+    const { dir, log } = this.options;
+    await fs.mkdir(dir, { recursive: true });
+    const now = new Date();
+    const id = `${IMPORT_PREFIX}${idFor(now)}`;
+    const file = path.join(dir, `${id}.json`);
+    await fs.writeFile(`${file}.tmp`, toSafeJson(state));
+    await fs.rename(`${file}.tmp`, file);
+    log(`Import saved: ${id}`);
+
+    const all = await this.imports();
+    const extra = all.slice(0, Math.max(0, all.length - KEEP_IMPORTS));
+    await Promise.all(extra.map((s) => fs.unlink(path.join(dir, `${s.id}.json`))));
+    return { id, takenAt: dateOf(idFor(now)).toISOString() };
+  }
+
+  /** Deletes one imported dump; false when there is no such import. Snapshots can't be deleted this way. */
+  async deleteImport(id: string): Promise<boolean> {
+    if (!isImportId(id)) return false;
+    return fs.unlink(path.join(this.options.dir, `${id}.json`)).then(() => true, () => false);
+  }
+
+  /** The files in the folder whose id is `prefix` plus a time, oldest first. */
+  private async filesWith(prefix: string): Promise<SnapshotInfo[]> {
     const names = await fs.readdir(this.options.dir).catch(() => [] as string[]);
     return names
-      .filter((name) => name.endsWith('.json'))
+      .filter((name) => name.startsWith(prefix) && name.endsWith('.json'))
       .map((name) => name.slice(0, -'.json'.length))
-      .filter((id) => ID_PATTERN.test(id))
+      .filter((id) => ID_PATTERN.test(id.slice(prefix.length)))
       .sort()
-      .map((id) => ({ id, takenAt: dateOf(id).toISOString() }));
+      .map((id) => ({ id, takenAt: dateOf(id.slice(prefix.length)).toISOString() }));
   }
 
   /** The list plus what the page needs around it: the settings, and how long an hour is. */
@@ -193,33 +254,41 @@ export class Snapshots {
     return states.filter((s): s is { takenAt: string; state: ZigbeeState } => s !== null);
   }
 
-  /** One snapshot's JSON text, or null if there is no such snapshot. */
+  /** One snapshot's or imported dump's JSON text, or null if there is no such thing. */
   async read(id: string): Promise<string | null> {
     // The pattern also keeps an id like "../app" from reaching outside the folder.
-    if (!ID_PATTERN.test(id)) return null;
+    if (!ID_PATTERN.test(id) && !isImportId(id)) return null;
     return fs.readFile(path.join(this.options.dir, `${id}.json`), 'utf8').catch(() => null);
   }
 
-  private scheduleNext(): void {
+  private scheduleNext(run: number): void {
     const slot = this.options.settings.intervalHours * HOUR_MS;
     let wait = slot - (msSinceLocalMidnight(new Date(), this.options.homey.clock.getTimezone()) % slot);
     // A timer can fire a moment early; don't let that turn into a second snapshot.
     if (wait < 1000) wait += slot;
 
     this.timer = this.options.homey.setTimeout(() => {
-      this.take()
+      this.take(run)
         .catch((err: Error) => this.options.log(`Snapshot failed: ${err.message}`))
-        .finally(() => this.scheduleNext());
+        // Not after a stop(): whoever stopped it has started its own schedule, if any.
+        .finally(() => {
+          if (run === this.run) this.scheduleNext(run);
+        });
     }, wait);
   }
 
-  private async take(): Promise<void> {
+  /** Saves the Zigbee state, unless the schedule `run` belongs to was stopped while it was read. */
+  private async take(run: number): Promise<void> {
     const { dir, getState, log } = this.options;
     const id = idFor(new Date());
     const file = path.join(dir, `${id}.json`);
 
+    const state = await getState();
+    // The settings may have changed meanwhile, and a new interval must not get an old one's snapshot.
+    if (run !== this.run) return;
+
     // Written under a temporary name first, so a half-written file never shows up in the list.
-    await fs.writeFile(`${file}.tmp`, toSafeJson(await getState()));
+    await fs.writeFile(`${file}.tmp`, toSafeJson(state));
     await fs.rename(`${file}.tmp`, file);
     log(`Snapshot saved: ${id}`);
 

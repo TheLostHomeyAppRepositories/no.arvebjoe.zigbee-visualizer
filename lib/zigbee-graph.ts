@@ -88,6 +88,12 @@ export type GraphNode = {
   nwkAddr: number;
   /** The devices that report the same network address, if any. */
   sharedWith?: string[];
+  /** The network address the device had when Homey interviewed it, if it says. */
+  pairedAddr?: number;
+  /** On a stale route entry: the graph ids of the devices that most likely left it behind. */
+  probablyWas?: number[];
+  /** On a device: the stale route entry it most likely left behind, by its address. */
+  staleAddr?: number;
   ieeeAddr: string | null;
   name: string;
   type: string;
@@ -181,6 +187,7 @@ function buildNode(addr: number, ieee: string, node: RawZigbeeNode): GraphNode {
   return {
     addr,
     nwkAddr: addr,
+    pairedAddr: interviewAddr(node),
     ieeeAddr: ieee,
     name: node.name || node.modelId || `0x${addr.toString(16)}`,
     type: node.type || node.deviceType || 'unknown',
@@ -279,6 +286,21 @@ export function buildGraph(state: ZigbeeState): Graph {
   Object.keys(routes).forEach((key) => {
     const addr = Number(key);
     if (!byAddr.has(addr)) byAddr.set(addr, ghostNode(addr));
+  });
+
+  // A stale entry at the address a device had when Homey paired it, while that
+  // device now reports another one, is most likely that same device: the route
+  // to it still exists, and it is Homey's record of the device that is out of date.
+  byAddr.forEach((ghost) => {
+    if (!ghost.isGhost) return;
+    const owners = [...byAddr.values()]
+      .filter((n) => !n.isGhost && n.pairedAddr === ghost.addr && n.nwkAddr !== ghost.addr);
+    if (!owners.length) return;
+    ghost.probablyWas = owners.map((n) => n.addr);
+    ghost.name = `0x${ghost.addr.toString(16)} · ${owners.map((n) => n.name).join(' / ')}?`;
+    owners.forEach((n) => {
+      n.staleAddr = ghost.addr;
+    });
   });
 
   const coordinator = byAddr.get(COORDINATOR_ADDR);

@@ -486,6 +486,17 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
 }
 .ghost-btn:hover { color: var(--danger); border-color: #6b2b28; }
 
+.imports { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.imports[hidden] { display: none; }
+.imports-title { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+.import-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.import-open {
+  flex: 1 1 auto; text-align: left; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.import-open:hover { border-color: var(--accent-dim); color: var(--accent); }
+.import-row .ghost-btn { padding: 5px 9px; }
+
 .loader-msg { font-size: 12px; line-height: 1.5; margin: 14px 0 0; }
 .loader-msg.bad { color: var(--danger); }
 .loader-msg.warn { color: var(--warn); }

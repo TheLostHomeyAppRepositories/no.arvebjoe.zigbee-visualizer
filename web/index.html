@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--
-  The dump is parsed and drawn entirely in this page. This policy is what turns
-  that from a promise into something the browser enforces: connect-src 'self'
-  lets the page fetch the live state from the Homey that serves it, and nothing
-  else anywhere — and default-src 'none' closes off everything not named below.
+  The page talks to the Homey that serves it and to nothing else. This policy is
+  what turns that from a promise into something the browser enforces: connect-src
+  'self' lets the page fetch graphs from that Homey, and send it a dump to read,
+  and nothing else anywhere — and default-src 'none' closes off everything not named below.
   The one relaxation is inline style attributes, which the detail panel writes
   for bar widths and hop colours; they can load nothing, because img-src is
   confined to this origin too.
@@ -123,8 +123,9 @@
     <button id="loaderClose" class="loader-close" type="button" title="Close (Esc)" hidden>&times;</button>
     <h2>Load a Zigbee dump</h2>
     <p class="loader-sub">
-      A dump you load here never leaves this browser: it is read, stripped of its
-      network key and drawn here. Nothing is uploaded.
+      A dump you load here goes to your Homey and nowhere else: the Homey strips
+      its network key and reads it, and this page draws it. With Remember ticked,
+      the Homey keeps it beside the snapshots, without the key.
     </p>
 
     <div id="dropzone" class="dropzone">
@@ -138,19 +139,19 @@
     <textarea id="pasteBox" spellcheck="false" placeholder='{ "controllerState": { … }, "nodes": { … } }'></textarea>
 
     <div class="loader-actions">
-      <label class="toggle" title="Keeps the dump in this browser's local storage, so it is still here after a reload">
-        <input type="checkbox" id="remember" checked> Remember in this browser
+      <label class="toggle" title="Keeps the dump on your Homey, beside the snapshots, so it can be opened again from any browser">
+        <input type="checkbox" id="remember" checked> Remember on the Homey
       </label>
-      <button id="forget" class="ghost-btn" type="button" hidden>Forget stored dump</button>
       <button id="usePaste" class="primary-btn" type="button">Visualize</button>
     </div>
+
+    <div id="imports" class="imports" hidden></div>
 
     <p id="loaderMsg" class="loader-msg" hidden></p>
   </div>
 </div>
 
 <script src="vendor/d3.min.js"></script>
-<script src="lib/parse.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

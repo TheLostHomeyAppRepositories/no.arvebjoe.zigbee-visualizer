@@ -4,7 +4,7 @@ const HOP_COLORS = ['#f0f6fc', '#4dd4ac', '#58a6ff', '#bc8cff', '#ff8fab'];
 const GHOST_COLOR = '#6e7681';
 
 // Link quality, derived from the TX success counters of the device at the far
-// end of each hop. Thresholds mirror lib/parse.js.
+// end of each hop. The Homey grades them, in lib/zigbee-graph.ts.
 const GRADE_LABEL = {
   good: 'Good', fair: 'Fair', weak: 'Weak', bad: 'Bad', unknown: 'Too little traffic',
 };
@@ -12,14 +12,39 @@ const GRADE_ORDER = ['bad', 'weak', 'fair', 'good', 'unknown'];
 
 // Cluster ids we are likely to meet in a Homey network, for readable endpoints.
 const CLUSTERS = {
-  0: 'Basic', 1: 'Power Config', 3: 'Identify', 4: 'Groups', 5: 'Scenes',
-  6: 'On/Off', 8: 'Level Control', 10: 'Time', 25: 'OTA Upgrade', 32: 'Poll Control',
-  257: 'Door Lock', 258: 'Window Covering', 512: 'Pump Config', 513: 'Thermostat',
-  514: 'Fan Control', 516: 'Thermostat UI', 768: 'Color Control', 769: 'Ballast Config',
-  1024: 'Illuminance', 1026: 'Temperature', 1027: 'Pressure', 1028: 'Flow',
-  1029: 'Humidity', 1030: 'Occupancy', 1280: 'IAS Zone', 1281: 'IAS ACE',
-  1282: 'IAS WD', 1794: 'Metering', 2820: 'Electrical Meas.', 2821: 'Diagnostics',
-  4096: 'Touchlink', 64513: 'Manufacturer', 64514: 'Manufacturer',
+  0: 'Basic',
+  1: 'Power Config',
+  3: 'Identify',
+  4: 'Groups',
+  5: 'Scenes',
+  6: 'On/Off',
+  8: 'Level Control',
+  10: 'Time',
+  25: 'OTA Upgrade',
+  32: 'Poll Control',
+  257: 'Door Lock',
+  258: 'Window Covering',
+  512: 'Pump Config',
+  513: 'Thermostat',
+  514: 'Fan Control',
+  516: 'Thermostat UI',
+  768: 'Color Control',
+  769: 'Ballast Config',
+  1024: 'Illuminance',
+  1026: 'Temperature',
+  1027: 'Pressure',
+  1028: 'Flow',
+  1029: 'Humidity',
+  1030: 'Occupancy',
+  1280: 'IAS Zone',
+  1281: 'IAS ACE',
+  1282: 'IAS WD',
+  1794: 'Metering',
+  2820: 'Electrical Meas.',
+  2821: 'Diagnostics',
+  4096: 'Touchlink',
+  64513: 'Manufacturer',
+  64514: 'Manufacturer',
 };
 
 const state = {
@@ -56,38 +81,51 @@ svg.call(zoom).on('dblclick.zoom', null);
 
 // ---------------------------------------------------------------- data ----
 
-const STORAGE_KEY = 'zigbee-visualizer.dump.v1';
 const REMEMBER_KEY = 'zigbee-visualizer.remember';
+// The most the Homey takes in for a dump: DUMP_LIMIT in lib/web-server.ts.
+const DUMP_LIMIT = 5 * 1024 * 1024;
+const rememberBox = document.getElementById('remember');
+
+// A loaded dump used to be kept in this browser; it is kept on the Homey now.
+try {
+  localStorage.removeItem('zigbee-visualizer.dump.v1');
+} catch { /* nothing to do */ }
+
+/** The JSON answer to a request, or a rejection carrying the server's own message. */
+function getJson(url, options) {
+  return fetch(url, options).then((res) => (res.ok
+    ? res.json()
+    : res.text().then((text) => Promise.reject(new Error(text || `HTTP ${res.status}`)))));
+}
 
 /**
- * Reads the text of a dump, strips its secrets, parses it and draws it. All of
- * it happens here in the page: the text is never sent to the server, and the
- * only copy that outlives the tab is the one in this browser's local storage.
+ * Checks the text of a dump, then has the Homey strip its secrets and build its
+ * graph, with the same code that draws the live network. With Remember ticked
+ * the Homey keeps it beside the snapshots, stripped, for any browser to reopen.
  */
 function ingest(text, sourceName) {
+  if (new Blob([text]).size > DUMP_LIMIT) {
+    return Promise.reject(new Error(`That is over ${DUMP_LIMIT / 1024 / 1024} MB, more than the Homey takes in.`));
+  }
   let dump;
   try {
     dump = JSON.parse(text);
   } catch (err) {
-    throw new Error(`That is not valid JSON — ${err.message}`);
+    return Promise.reject(new Error(`That is not valid JSON — ${err.message}`));
   }
   if (!dump || typeof dump !== 'object' || (!dump.nodes && !dump.controllerState)) {
-    throw new Error('No "nodes" or "controllerState" in there — that does not look like a Homey Zigbee dump.');
+    return Promise.reject(new Error('No "nodes" or "controllerState" in there — that does not look like a Homey Zigbee dump.'));
   }
 
-  // Before anything else, and before any copy of the dump is kept: drop the
-  // network key, so a dump the user forgot to redact carries it no further.
-  const stripped = ZigbeeParse.stripSecrets(dump);
-
-  const graph = ZigbeeParse.parseDump(dump);
-  graph.meta.source = sourceName;
-
-  // Store before drawing: the dump is known good by now, and trouble in the
-  // renderer should not also cost the user their copy of it.
-  const storeError = rememberBox.checked ? remember(dump, sourceName, stripped) : (forget(), null);
-
-  show(graph);
-  return { stripped, storeError };
+  const remember = rememberBox.checked;
+  return getJson(`api/imports${remember ? '?remember=1' : ''}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text,
+  }).then(({ graph, stripped, id }) => {
+    graph.meta.source = sourceName;
+    showImport(graph, id);
+    const storeError = remember && !id ? 'The Homey could not keep it, so you will have to load it again after a refresh.' : null;
+    return { stripped, storeError };
+  });
 }
 
 /** Hands a freshly parsed graph to the rest of the app. */
@@ -98,7 +136,11 @@ function show(graph) {
   state.byAddr = new Map();
   for (const node of graph.nodes) {
     const old = prev.get(node.addr);
-    if (old) Object.assign(node, { x: old.x, y: old.y, vx: 0, vy: 0 });
+    if (old) {
+      Object.assign(node, {
+        x: old.x, y: old.y, vx: 0, vy: 0,
+      });
+    }
     state.byAddr.set(node.addr, node);
   }
 
@@ -110,44 +152,46 @@ function show(graph) {
   else renderOverview();
 }
 
-// ------------------------------------------------------------- storage ----
-// The dump lives in localStorage, which is per-origin and stays on this
-// machine. It is already stripped of its secrets by the time it gets here.
+// ------------------------------------------------------------- imports ----
+// Dumps loaded with Remember ticked are kept on the Homey, beside the snapshots,
+// already stripped of their secrets. They are listed in the loader card.
 
-function remember(dump, sourceName, stripped) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      version: 1, name: sourceName, savedAt: Date.now(), stripped, dump,
-    }));
-    return null;
-  } catch (err) {
-    // Almost always the ~5 MB quota. The graph is drawn either way.
-    forget();
-    return 'Too big for this browser’s storage, so it is not kept — you will have to load it again after a refresh.';
-  }
+const importLabel = (it) => `Imported ${new Date(it.takenAt).toLocaleString()}`;
+
+/** Draws one kept import; resolves to false when it can't be read. */
+function openImport(it) {
+  return getJson(`api/imports/${encodeURIComponent(it.id)}`)
+    .then((graph) => {
+      graph.meta.source = importLabel(it);
+      showImport(graph, it.id);
+      return true;
+    })
+    .catch(() => false);
 }
 
+/** Falls back to the newest kept import when the live state can't be read. */
 function restore() {
-  let saved = null;
-  try {
-    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-  } catch (err) { /* corrupt entry — fall through and drop it */ }
-  if (!saved || !saved.dump) return false;
-
-  try {
-    ZigbeeParse.stripSecrets(saved.dump); // belt and braces: it was stripped before it was stored
-    const graph = ZigbeeParse.parseDump(saved.dump);
-    graph.meta.source = saved.name;
-    show(graph);
-    return true;
-  } catch (err) {
-    forget();
-    return false;
-  }
+  return getJson('api/imports')
+    .then((list) => (list.length ? openImport(list[list.length - 1]) : false))
+    .catch(() => false);
 }
 
-function forget() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* nothing to do */ }
+/** Lists the kept imports in the loader card, newest first. */
+function renderImports() {
+  const box = document.getElementById('imports');
+  getJson('api/imports')
+    .then((list) => {
+      box.hidden = !list.length;
+      box.innerHTML = `<div class="imports-title">Kept on this Homey</div>${list.slice().reverse().map((it) => `
+        <div class="import-row">
+          <button type="button" class="import-open" data-import="${escapeHtml(it.id)}"
+            data-taken="${escapeHtml(it.takenAt)}">${escapeHtml(importLabel(it))}</button>
+          <button type="button" class="ghost-btn" data-delete="${escapeHtml(it.id)}" title="Delete from the Homey">&times;</button>
+        </div>`).join('')}`;
+    })
+    .catch(() => {
+      box.hidden = true;
+    });
 }
 
 // -------------------------------------------------------------- loading ----
@@ -156,14 +200,13 @@ const loader = document.getElementById('loader');
 const dropzone = document.getElementById('dropzone');
 const pasteBox = document.getElementById('pasteBox');
 const loaderMsg = document.getElementById('loaderMsg');
-const rememberBox = document.getElementById('remember');
 
 /** `pinned` = opened deliberately, so a passing drag cannot close it again. */
 function openLoader(pinned) {
   if (pinned) state.loaderPinned = true;
   loader.hidden = false;
   document.getElementById('loaderClose').hidden = !state.graph;
-  document.getElementById('forget').hidden = !hasStoredDump();
+  renderImports();
 }
 
 function closeLoader() {
@@ -172,10 +215,6 @@ function closeLoader() {
   loader.hidden = true;
   dropzone.classList.remove('over');
   note('');
-}
-
-function hasStoredDump() {
-  try { return Boolean(localStorage.getItem(STORAGE_KEY)); } catch (err) { return false; }
 }
 
 /** A message inside the loader card — errors and warnings live here. */
@@ -193,29 +232,35 @@ function toast(text, kind) {
   clearTimeout(hintTimer);
   hint.textContent = text;
   hint.className = `hint ${kind || ''}`;
-  hintTimer = setTimeout(() => { hint.textContent = HINT_TEXT; hint.className = 'hint'; }, 8000);
+  hintTimer = setTimeout(() => {
+    hint.textContent = HINT_TEXT; hint.className = 'hint';
+  }, 8000);
 }
 
 function submit(text, sourceName) {
   if (!String(text || '').trim()) return note('Nothing to read there yet.', 'bad');
-  let result;
-  try {
-    result = ingest(text, sourceName);
-  } catch (err) {
-    openLoader(true);
-    return note(err.message, 'bad');
-  }
-  pasteBox.value = '';
-  closeLoader();
-  if (result.storeError) toast(result.storeError, 'warn');
-  else if (result.stripped.length) toast(`Network key removed from ${sourceName} — it is never stored or drawn.`, 'ok');
+  note('Reading…');
+  return ingest(text, sourceName).then(
+    (result) => {
+      pasteBox.value = '';
+      closeLoader();
+      if (result.storeError) toast(result.storeError, 'warn');
+      else if (result.stripped.length) toast(`Network key removed from ${sourceName} — it is never stored or drawn.`, 'ok');
+    },
+    (err) => {
+      openLoader(true);
+      note(err.message, 'bad');
+    },
+  );
 }
 
 function readFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => submit(String(reader.result), file.name);
-  reader.onerror = () => { openLoader(true); note(`Could not read ${file.name}.`, 'bad'); };
+  reader.onerror = () => {
+    openLoader(true); note(`Could not read ${file.name}.`, 'bad');
+  };
   reader.readAsText(file);
 }
 
@@ -312,7 +357,9 @@ function render() {
       return g;
     })
     .attr('class', (d) => `node${d.isGhost ? ' ghost' : ''}`)
-    .on('click', (event, d) => { event.stopPropagation(); select(d.addr); })
+    .on('click', (event, d) => {
+      event.stopPropagation(); select(d.addr);
+    })
     .on('mouseenter', showTooltip)
     .on('mousemove', moveTooltip)
     .on('mouseleave', hideTooltip)
@@ -321,7 +368,9 @@ function render() {
         if (!event.active) simulation.alphaTarget(0.25).restart();
         d.fx = d.x; d.fy = d.y;
       })
-      .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on('drag', (event, d) => {
+        d.fx = event.x; d.fy = event.y;
+      })
       .on('end', (event, d) => {
         if (!event.active) simulation.alphaTarget(0);
         d.fx = null; d.fy = null;
@@ -427,12 +476,15 @@ function drawRings(ringRadius, maxHops) {
   const data = d3.range(1, maxHops + 1).map((k) => ({ k, r: ringRadius[k] }));
 
   ringLayer.selectAll('ellipse').data(data, (d) => d.k).join('ellipse')
-    .attr('cx', cx).attr('cy', cy)
-    .attr('rx', (d) => d.r * stretch).attr('ry', (d) => d.r)
+    .attr('cx', cx)
+    .attr('cy', cy)
+    .attr('rx', (d) => d.r * stretch)
+    .attr('ry', (d) => d.r)
     .attr('class', 'ring');
 
   ringLayer.selectAll('text').data(data, (d) => d.k).join('text')
-    .attr('x', cx).attr('y', (d) => cy - d.r - 5)
+    .attr('x', cx)
+    .attr('y', (d) => cy - d.r - 5)
     .attr('class', 'ring-label')
     .text((d) => `${d.k} hop${d.k === 1 ? '' : 's'}`);
 }
@@ -451,7 +503,10 @@ function treeLayout(nodes, ringRadius, unrouted) {
     .id((d) => d.addr)
     // Devices the controller has no route for are hung off the controller so
     // they stay visible instead of disappearing from the picture.
-    .parentId((d) => (d.isCoordinator ? null : present.has(d.parent) ? d.parent : 0))(nodes);
+    .parentId((d) => {
+      if (d.isCoordinator) return null;
+      return present.has(d.parent) ? d.parent : 0;
+    })(nodes);
 
   const outer = ringRadius[unrouted];
   d3.tree()
@@ -478,11 +533,15 @@ function treeLayout(nodes, ringRadius, unrouted) {
 function forceLayout(nodes, links, ringOf, ringGap) {
   const cx = width / 2;
   const cy = height / 2;
-  for (const n of nodes) { n.fx = null; n.fy = null; n.angle = null; }
+  for (const n of nodes) {
+    n.fx = null; n.fy = null; n.angle = null;
+  }
 
   // The controller is the anchor of the whole picture, so it stays put.
   const coordinator = nodes.find((n) => n.isCoordinator);
-  if (coordinator) { coordinator.fx = cx; coordinator.fy = cy; }
+  if (coordinator) {
+    coordinator.fx = cx; coordinator.fy = cy;
+  }
 
   if (!simulation) {
     simulation = d3.forceSimulation().on('tick', tick).on('end', fitToView);
@@ -508,18 +567,21 @@ function fitToView() {
   const xs = nodes.map((n) => n.x);
   const ys = nodes.map((n) => n.y);
   const pad = 50;
-  const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
-  const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
+  const minX = Math.min(...xs) - pad; const
+    maxX = Math.max(...xs) + pad;
+  const minY = Math.min(...ys) - pad; const
+    maxY = Math.max(...ys) + pad;
   const scale = Math.min(2, Math.min(width / (maxX - minX), height / (maxY - minY)));
-  const tx = width / 2 - scale * (minX + maxX) / 2;
-  const ty = height / 2 - scale * (minY + maxY) / 2;
+  const tx = width / 2 - (scale * (minX + maxX)) / 2;
+  const ty = height / 2 - (scale * (minY + maxY)) / 2;
   svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
 }
 
 function tick() {
   linkLayer.selectAll('g.lnk line')
     .attr('x1', (d) => d.source.x).attr('y1', (d) => d.source.y)
-    .attr('x2', (d) => d.target.x).attr('y2', (d) => d.target.y);
+    .attr('x2', (d) => d.target.x)
+    .attr('y2', (d) => d.target.y);
   nodeLayer.selectAll('g.node').attr('transform', (d) => `translate(${d.x},${d.y})`);
 }
 
@@ -596,7 +658,9 @@ function moveTooltip(event) {
   const box = document.getElementById('graph').getBoundingClientRect();
   tooltip.style('left', `${event.clientX - box.left + 14}px`).style('top', `${event.clientY - box.top + 14}px`);
 }
-function hideTooltip() { tooltip.style('opacity', 0); }
+function hideTooltip() {
+  tooltip.style('opacity', 0);
+}
 
 // ---------------------------------------------------------------- panel ----
 
@@ -623,7 +687,7 @@ function renderOverview() {
   document.getElementById('panel').insertAdjacentHTML('afterbegin', `
     <div class="tabs">${PANEL_TABS.map(([id, label]) => `<button type="button"
       class="tab${state.panelTab === id ? ' active' : ''}" data-tab="${id}">${label}${id === 'changes' && state.changes?.size
-        ? ` (${state.changes.size})` : ''}</button>`).join('')}</div>`);
+  ? ` (${state.changes.size})` : ''}</button>`).join('')}</div>`);
 }
 
 /**
@@ -731,7 +795,10 @@ function renderPanel(n) {
   const sections = [];
 
   // --- header
-  const badges = [`<span class="badge type">${n.isCoordinator ? 'coordinator' : n.isGhost ? 'unknown device' : n.type}</span>`];
+  let typeLabel = n.type;
+  if (n.isCoordinator) typeLabel = 'coordinator';
+  else if (n.isGhost) typeLabel = 'unknown device';
+  const badges = [`<span class="badge type">${typeLabel}</span>`];
   if (n.hops != null) badges.push(`<span class="badge">${n.hops} hop${n.hops === 1 ? '' : 's'}</span>`);
   if (n.receiveWhenIdle === false) badges.push('<span class="badge">sleepy</span>');
   if (n.descendantCount) badges.push(`<span class="badge">relays ${n.descendantCount}</span>`);
@@ -776,7 +843,9 @@ function renderPanel(n) {
   if (n.stats && (n.stats.tx || n.stats.rx)) {
     const s = n.stats;
     const pct = s.successRate == null ? null : Math.round(s.successRate * 100);
-    const cls = pct == null ? '' : pct >= 90 ? '' : pct >= 70 ? 'warn' : 'danger';
+    let cls = '';
+    if (pct != null && pct < 70) cls = 'danger';
+    else if (pct != null && pct < 90) cls = 'warn';
     sections.push(section('Radio statistics', `
       <dl class="kv">
         <dt>TX success</dt><dd>${pct == null ? '—' : `${pct}%`}
@@ -848,8 +917,8 @@ function uplinkSection(n) {
       <dt>Failed</dt><dd>${(link.txError || 0).toLocaleString()}</dd>
     </dl>
     ${link.grade === 'unknown'
-      ? '<p class="note">Too few transmissions to judge this link yet.</p>'
-      : ''}`);
+    ? '<p class="note">Too few transmissions to judge this link yet.</p>'
+    : ''}`);
 }
 
 /** How well the devices hanging off this one are doing. */
@@ -954,7 +1023,9 @@ function ago(ts) {
 }
 
 function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
 // ------------------------------------------------------------ interaction --
@@ -1022,7 +1093,9 @@ document.getElementById('showLabels').addEventListener('change', (e) => {
 });
 document.getElementById('layout').addEventListener('change', (e) => {
   state.layout = e.target.value;
-  state.graph.nodes.forEach((n) => { n.x = undefined; n.y = undefined; n.fx = null; n.fy = null; });
+  state.graph.nodes.forEach((n) => {
+    n.x = undefined; n.y = undefined; n.fx = null; n.fy = null;
+  });
   render();
 });
 document.getElementById('fit').addEventListener('click', fitToView);
@@ -1031,10 +1104,16 @@ document.getElementById('open').addEventListener('click', () => openLoader(true)
 // Panes marked .collapsible fold down to their .collapse-keep part (e.g. the
 // title). data-collapse says which way they fold; the state is remembered per id.
 const COLLAPSE_KEY = 'zigbee-visualizer.collapsed';
-const COLLAPSE_ICONS = { up: ['▲', '▼'], down: ['▼', '▲'], left: ['<<', '>>'], right: ['>>', '<<'] };
+const COLLAPSE_ICONS = {
+  up: ['▲', '▼'], down: ['▼', '▲'], left: ['<<', '>>'], right: ['>>', '<<'],
+};
 
 function readCollapsed() {
-  try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || {}; } catch (err) { return {}; }
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || {};
+  } catch {
+    return {};
+  }
 }
 
 function setCollapsed(pane, collapsed) {
@@ -1055,11 +1134,15 @@ document.querySelectorAll('.collapsible').forEach((pane) => {
     if (state.graph && ['left', 'right'].includes(pane.dataset.collapse)) render();
     const saved = readCollapsed();
     saved[pane.id] = collapsed;
-    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(saved)); } catch (err) { /* ignore */ }
+    try {
+      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(saved));
+    } catch { /* ignore */ }
   });
 });
 
-window.addEventListener('resize', () => { if (state.graph) render(); });
+window.addEventListener('resize', () => {
+  if (state.graph) render();
+});
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!loader.hidden) closeLoader();
@@ -1072,7 +1155,9 @@ document.addEventListener('keydown', (e) => {
 // ------------------------------------------------------- loading the dump --
 
 document.getElementById('loaderClose').addEventListener('click', closeLoader);
-loader.addEventListener('click', (e) => { if (e.target === loader) closeLoader(); });
+loader.addEventListener('click', (e) => {
+  if (e.target === loader) closeLoader();
+});
 
 const fileInput = document.getElementById('fileInput');
 document.getElementById('pickFile').addEventListener('click', () => fileInput.click());
@@ -1088,17 +1173,28 @@ pasteBox.addEventListener('keydown', (e) => {
 pasteBox.addEventListener('input', () => note(''));
 
 rememberBox.addEventListener('change', () => {
-  try { localStorage.setItem(REMEMBER_KEY, rememberBox.checked ? 'yes' : 'no'); } catch (err) { /* ignore */ }
-  if (!rememberBox.checked) {
-    forget();
-    document.getElementById('forget').hidden = true;
-  }
+  try {
+    localStorage.setItem(REMEMBER_KEY, rememberBox.checked ? 'yes' : 'no');
+  } catch { /* ignore */ }
 });
 
-document.getElementById('forget').addEventListener('click', () => {
-  forget();
-  document.getElementById('forget').hidden = true;
-  note('Removed from this browser’s storage.', 'ok');
+document.getElementById('imports').addEventListener('click', (e) => {
+  const open = e.target.closest('[data-import]');
+  const del = e.target.closest('[data-delete]');
+  if (open) {
+    openImport({ id: open.dataset.import, takenAt: open.dataset.taken }).then((shown) => {
+      if (shown) closeLoader();
+      else note('Could not read that import.', 'bad');
+    });
+  } else if (del) {
+    fetch(`api/imports/${encodeURIComponent(del.dataset.delete)}`, { method: 'DELETE' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        note('Deleted from the Homey.', 'ok');
+      })
+      .catch((err) => note(`Could not delete it: ${err.message}`, 'bad'))
+      .finally(renderImports);
+  }
 });
 
 // Dragging a file anywhere over the window opens the drop zone; letting go
@@ -1113,7 +1209,9 @@ window.addEventListener('dragenter', (e) => {
   openLoader();
   dropzone.classList.add('over');
 });
-window.addEventListener('dragover', (e) => { if (dragHasFile(e)) e.preventDefault(); });
+window.addEventListener('dragover', (e) => {
+  if (dragHasFile(e)) e.preventDefault();
+});
 window.addEventListener('dragleave', (e) => {
   if (!dragHasFile(e) || --dragDepth > 0) return;
   dragDepth = 0;
@@ -1131,19 +1229,20 @@ window.addEventListener('drop', (e) => {
 
 // ----------------------------------------------------------------- boot ----
 
-try { rememberBox.checked = localStorage.getItem(REMEMBER_KEY) !== 'no'; } catch (err) { /* ignore */ }
-// Served by the Homey app: load the live state straight away. The saved dump
-// and the loader stay as the fallback for when the Homey cannot be reached.
-fetch('api/state')
-  .then((res) => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.text();
-  })
-  .then((text) => {
-    submit(text, 'Homey (live)');
+try {
+  rememberBox.checked = localStorage.getItem(REMEMBER_KEY) !== 'no';
+} catch { /* ignore */ }
+// Served by the Homey app: load the live network straight away. The newest kept
+// import and the loader are the fallback for when the Zigbee state can't be read.
+getJson('api/graph')
+  .then((graph) => {
+    graph.meta.source = 'Homey (live)';
+    show(graph);
     compareShown();
   })
-  .catch(() => { if (!restore()) openLoader(true); });
+  .catch(() => restore().then((shown) => {
+    if (!shown) openLoader(true);
+  }));
 
 // ----------------------------------------------------------- history ----
 
@@ -1156,7 +1255,17 @@ let historySnapshots = null; // every snapshot, oldest first, as last reported b
 
 let historySettings = null; // the snapshot settings, as last reported by the app
 
-function renderHistory({ enabled, intervalHours, keep, hourMs, snapshots }, routes) {
+/** Draws an imported dump. It is not part of the history, so there is nothing to compare it with. */
+function showImport(graph, id) {
+  historyActive = id || 'import';
+  show(graph);
+  compareShown();
+  loadHistory();
+}
+
+function renderHistory({
+  enabled, intervalHours, keep, hourMs, snapshots,
+}, routes) {
   historySettings = { enabled, intervalHours, keep };
   const first = historySnapshots === null;
   historySnapshots = snapshots;
@@ -1165,7 +1274,9 @@ function renderHistory({ enabled, intervalHours, keep, hourMs, snapshots }, rout
   const moved = routeChanges(routes);
   const items = [{ id: '', label: '●', when: 'Live' }].concat(snapshots.slice().reverse().map((s) => {
     const back = Math.max(1, Math.ceil((Date.now() - Date.parse(s.takenAt)) / step)) * intervalHours;
-    return { id: s.id, label: `-${back}`, when: new Date(s.takenAt).toLocaleString(), moved: moved.get(s.id) };
+    return {
+      id: s.id, label: `-${back}`, when: new Date(s.takenAt).toLocaleString(), moved: moved.get(s.id),
+    };
   }));
   historyList.innerHTML = items.map((it) => {
     const title = it.moved ? `${it.when} · ${it.moved} route change${it.moved === 1 ? '' : 's'}` : it.when;
@@ -1203,16 +1314,13 @@ historyList.addEventListener('click', (e) => {
   const item = e.target.closest('[data-snap]');
   if (!item) return;
   const id = item.dataset.snap;
-  fetch(id ? `api/snapshots/${id}` : 'api/state')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.text();
-    })
-    .then((text) => {
+  getJson(id ? `api/snapshots/${id}` : 'api/graph')
+    .then((graph) => {
       historyActive = id;
+      graph.meta.source = id ? `Snapshot ${item.dataset.when} (${item.textContent} h)` : 'Homey (live)';
       // Only while this one snapshot is drawn, so Fit, resizing and the rest still refit.
       state.keepView = true;
-      submit(text, id ? `Snapshot ${item.dataset.when} (${item.textContent} h)` : 'Homey (live)');
+      show(graph);
       state.keepView = false;
       compareShown();
       loadHistory();
@@ -1249,7 +1357,9 @@ hsInterval.addEventListener('change', () => {
   hsWarn.hidden = Number(hsInterval.value) === historySettings.intervalHours;
 });
 
-document.getElementById('hsCancel').addEventListener('click', () => { hsPanel.hidden = true; });
+document.getElementById('hsCancel').addEventListener('click', () => {
+  hsPanel.hidden = true;
+});
 
 // The server answers /api/export as a file to save, so the page itself stays where it is.
 document.getElementById('historyDownload').addEventListener('click', () => {
@@ -1300,7 +1410,9 @@ function diffGraphs(before, now) {
       const was = parentOf(a, old);
       const is = parentOf(b, n);
       if ((was && nodeKey(was)) !== (is && nodeKey(is))) {
-        changes.set(key, { kind: 'moved', node: n, from: parentName(a, old), to: parentName(b, n) });
+        changes.set(key, {
+          kind: 'moved', node: n, from: parentName(a, old), to: parentName(b, n),
+        });
       }
     }
   }
@@ -1329,11 +1441,10 @@ function compareShown() {
   const olderId = olderThan(historyActive);
   if (!olderId) return;
 
-  fetch(`api/snapshots/${olderId}`)
-    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-    .then((dump) => {
+  getJson(`api/snapshots/${olderId}`)
+    .then((older) => {
       if (state.graph !== shown) return; // another snapshot was picked meanwhile
-      state.changes = diffGraphs(ZigbeeParse.parseDump(dump), shown);
+      state.changes = diffGraphs(older, shown);
       applyHighlight();
       if (!state.selected) renderOverview();
     })
@@ -1346,8 +1457,9 @@ function renderChangesTab() {
     .sort((a, b) => order[a.kind] - order[b.kind] || a.node.name.localeCompare(b.node.name));
 
   const rows = list.map((c) => {
-    const detail = c.kind === 'moved' ? `${escapeHtml(shortName(c.from))} → ${escapeHtml(shortName(c.to))}`
-      : c.kind === 'joined' ? 'joined the network' : 'no longer in the network';
+    let detail = 'no longer in the network';
+    if (c.kind === 'moved') detail = `${escapeHtml(shortName(c.from))} → ${escapeHtml(shortName(c.to))}`;
+    else if (c.kind === 'joined') detail = 'joined the network';
     const addr = c.kind === 'left' ? '' : ` data-addr="${c.node.addr}"`;
     return `<li${addr}><span class="change-dot ${c.kind}"></span>
       <span class="wl-name">${escapeHtml(shortName(c.node.name))}
@@ -1410,12 +1522,13 @@ function routeHistoryHtml(n, snapshots) {
   if (points.length < 2) return section('Route history', '<p class="note">Not enough snapshots yet to show a history.</p>');
 
   const keyOf = (parent) => (parent === undefined ? '~gone' : parent ?? '~none');
-  const label = (k) => (k === '~gone' ? 'Not in the network' : k === '~none' ? 'No route' : names[k] ?? k);
+  const FIXED_LABELS = { '~gone': 'Not in the network', '~none': 'No route' };
+  const label = (k) => FIXED_LABELS[k] ?? names[k] ?? k;
   const counts = new Map();
   points.forEach((p) => counts.set(keyOf(p.parent), (counts.get(keyOf(p.parent)) ?? 0) + 1));
   const colors = new Map();
-  [...counts.keys()].forEach((k, i) => colors.set(k, k === '~gone' ? 'var(--q-unknown)'
-    : k === '~none' ? 'var(--q-bad)' : ROUTE_COLORS[i % ROUTE_COLORS.length]));
+  const FIXED_COLORS = { '~gone': 'var(--q-unknown)', '~none': 'var(--q-bad)' };
+  [...counts.keys()].forEach((k, i) => colors.set(k, FIXED_COLORS[k] ?? ROUTE_COLORS[i % ROUTE_COLORS.length]));
 
   const timeline = points.map((p) => {
     const when = p.id ? new Date(p.takenAt).toLocaleString() : 'Live';
