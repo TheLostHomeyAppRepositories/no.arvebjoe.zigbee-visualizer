@@ -1,0 +1,5 @@
+# Raw network dumps from the probe: they hold home ids and addresses.
+data/
+
+# Notes for developers, not for the Homey: CLAUDE.md, todo.md, CONTRIBUTING.md and the like.
+/*.md

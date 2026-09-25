@@ -4,3 +4,6 @@ env.json
 .DS_Store
 .idea/
 *.swp
+
+# Raw network dumps from the probe: they hold home ids and addresses.
+data/
