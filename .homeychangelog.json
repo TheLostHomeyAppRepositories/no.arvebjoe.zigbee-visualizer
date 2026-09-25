@@ -13,5 +13,8 @@
   },
   "1.3.0": {
     "en": "Added a Zigbee map widget for your Homey dashboards. It draws the network map in the space you give it, square, wide or tall, with the number of links per quality grade along the bottom, and tapping a device shows its route to Homey. In the widget's settings you choose which devices are named, whether stale routes are shown, and how often it refreshes."
+  },
+  "1.3.1": {
+    "en": "Helping add Z-Wave, Thread or Matter to the visualizer: the Load dialog in the browser view can now download a raw dump of every network on your Homey, to share on the forum. Network keys and other secrets are left out."
   }
 }
