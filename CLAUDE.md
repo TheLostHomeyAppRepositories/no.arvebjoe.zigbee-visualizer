@@ -9,7 +9,7 @@ device, the route each takes back to Homey, and a quality grade per hop. It has 
 and no devices of its own; it reads the Zigbee state through the Web API and draws it. The app id
 `no.arvebjoe.zigbee-visualizer` is the directory / package name and must stay in sync with the manifest.
 
-There are two front ends over the same data:
+There are three front ends over the same data:
 
 - **Settings page** (`settings/index.html`): the map inside the Homey app. It calls the app's API routes
   (`api.ts`, declared under `api` in the manifest: `/network`, `/state`, `/visualizer`) through
@@ -18,6 +18,11 @@ There are two front ends over the same data:
   (`lib/web-server.ts`), with snapshot history, a Changes tab, route history, export and dump import.
   **Off until the user switches it on**, because it has no login; `app.ts` starts and stops the server
   as the `webServer` setting changes.
+- **Dashboard widget** (`widgets/network-map/`): a small read-only map for Homey dashboards. Its own API
+  (`api.ts`, declared in `widget.compose.json`; the CLI compiles it to `.homeybuild/widgets/network-map/api.js`)
+  returns the graph already laid out, so the page only scales and draws it. Tap a device to see its
+  route; it never pans or zooms, so a swipe over it still scrolls the dashboard. The previews
+  (`preview-light.png`, `preview-dark.png`, 1024×1024, transparent, no text) are required by the CLI.
 
 ### Where things live
 
@@ -26,6 +31,9 @@ There are two front ends over the same data:
 - `lib/zigbee-graph.ts` — `buildGraph()`, **the only graph builder**. The settings page and the browser
   view both get graphs from it; the browser never parses raw state. Keep it that way: a second copy in
   `web/` existed once and drifted.
+- `lib/widget-view.ts` — `buildWidgetView()`: the widget's view of a graph, with the settings page's
+  radial-tree layout done on the Homey. The settings page still has its own copy of that layout in
+  its script.
 - `lib/snapshots.ts` — the history, in `/userdata/snapshots/` (the one writable folder; it survives
   updates). A snapshot is `<UTC time>.json`, e.g. `2026-09-24T12-00-00Z.json`, so sorting by name is
   sorting by time. Dumps imported in the browser live in the same folder as `import-<UTC time>.json`,
@@ -147,7 +155,8 @@ rather than `npm run build` when testing on a device.
 `.homeycompose/app.json` is the **source** manifest; the root `app.json` is generated from it by
 `homey app build` and carries a `_comment` saying so. Edit the compose one — root `app.json` edits get
 overwritten. Both are committed, which is the Homey convention. The only other compose piece in use is
-the manifest itself: there are no drivers, flows or capabilities.
+`widgets/network-map/widget.compose.json`, merged into `app.json` under `widgets`: there are no
+drivers, flows or capabilities.
 
 Store artwork is in `assets/images/` (`small.png`, `large.png`, `xlarge.png`), next to `assets/icon.svg`.
 

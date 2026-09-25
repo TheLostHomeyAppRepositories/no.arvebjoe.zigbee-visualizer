@@ -1,7 +1,7 @@
 {
   "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
   "id": "no.arvebjoe.zigbee-visualizer",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "compatibility": ">=12.4.0",
   "sdk": 3,
   "brandColor": "#E8951F",
@@ -66,5 +66,104 @@
   "bugs": {
     "url": "https://github.com/arvebjoe/no.arvebjoe.zigbee-visualizer/issues"
   },
-  "support": "https://github.com/arvebjoe/no.arvebjoe.zigbee-visualizer/issues"
+  "support": "https://github.com/arvebjoe/no.arvebjoe.zigbee-visualizer/issues",
+  "widgets": {
+    "network-map": {
+      "name": {
+        "en": "Zigbee map"
+      },
+      "height": "100%",
+      "settings": [
+        {
+          "id": "shape",
+          "type": "dropdown",
+          "title": {
+            "en": "Shape"
+          },
+          "value": "square",
+          "values": [
+            {
+              "id": "square",
+              "title": {
+                "en": "Square"
+              }
+            },
+            {
+              "id": "wide",
+              "title": {
+                "en": "Wide"
+              }
+            },
+            {
+              "id": "tall",
+              "title": {
+                "en": "Tall"
+              }
+            }
+          ]
+        },
+        {
+          "id": "labels",
+          "type": "dropdown",
+          "title": {
+            "en": "Names"
+          },
+          "value": "none",
+          "values": [
+            {
+              "id": "none",
+              "title": {
+                "en": "Only the device you tap"
+              }
+            },
+            {
+              "id": "routers",
+              "title": {
+                "en": "Routers"
+              }
+            },
+            {
+              "id": "all",
+              "title": {
+                "en": "All devices"
+              }
+            }
+          ]
+        },
+        {
+          "id": "summary",
+          "type": "checkbox",
+          "title": {
+            "en": "Show link quality counts"
+          },
+          "value": true
+        },
+        {
+          "id": "ghosts",
+          "type": "checkbox",
+          "title": {
+            "en": "Show stale routes"
+          },
+          "value": false
+        },
+        {
+          "id": "refresh",
+          "type": "number",
+          "title": {
+            "en": "Refresh every (minutes)"
+          },
+          "value": 5,
+          "min": 1,
+          "max": 60
+        }
+      ],
+      "api": {
+        "getView": {
+          "method": "GET",
+          "path": "/"
+        }
+      },
+      "id": "network-map"
+    }
+  }
 }
