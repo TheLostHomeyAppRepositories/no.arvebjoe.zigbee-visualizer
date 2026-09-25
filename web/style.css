@@ -151,7 +151,7 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
   position: relative;
   display: flex; align-items: center; gap: 8px;
   background: rgba(22,27,34,.9); border: 1px solid var(--border);
-  border-radius: 8px; padding: 6px 10px; font-size: 11px; color: var(--text-dim);
+  border-radius: 8px; padding: 9px 10px; font-size: 11px; color: var(--text-dim);
   backdrop-filter: blur(6px);
 }
 .history .collapse-toggle,
@@ -161,7 +161,10 @@ main { flex: 1 1 auto; display: flex; min-height: 0; }
   display: flex; align-items: center;
 }
 .history .collapse-toggle:hover, .history-btn:hover, .history-item:hover { color: var(--accent); }
-.history-item.active { color: var(--accent); }
+.history-item.active {
+  color: var(--accent);
+  text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 5px;
+}
 .history-item.moved { position: relative; }
 .history-item.moved::after {
   content: ''; position: absolute; top: -5px; right: -3px;
