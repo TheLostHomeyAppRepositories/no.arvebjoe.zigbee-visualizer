@@ -17,7 +17,7 @@ type ApiRequest = {
 
 const app = ({ homey }: ApiRequest) => homey.app as unknown as NetworkVisualizerApp;
 
-module.exports = {
+export default {
 
   /**
    * GET /api/app/no.arvebjoe.network-visualizer/state

@@ -1,8 +1,8 @@
 'use strict';
 
 import type Homey from 'homey';
-import type { Graph } from '../../lib/zigbee-graph';
-import { buildWidgetView } from '../../lib/widget-view';
+import type { Graph } from '../../lib/zigbee-graph.js';
+import { buildWidgetView } from '../../lib/widget-view.js';
 
 /** The app instance, as far as this widget needs it. */
 type NetworkVisualizerApp = {
@@ -14,7 +14,7 @@ type WidgetRequest = {
   query: Record<string, string>;
 };
 
-module.exports = {
+export default {
 
   /**
    * GET /?network=thread&ghosts=1

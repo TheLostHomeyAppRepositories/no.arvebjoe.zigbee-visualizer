@@ -3,20 +3,20 @@
 import type http from 'http';
 import Homey from 'homey';
 import { HomeyAPI } from 'homey-api';
-import { buildGraph, Graph, ZigbeeState } from './lib/zigbee-graph';
-import { isNetworkId, NetworkId } from './lib/graph';
-import { buildThreadGraph, ThreadInput, trimThreadInput } from './lib/thread-graph';
-import { buildZwaveGraph, trimZwaveInput, ZwaveInput } from './lib/zwave-graph';
+import { buildGraph, Graph, ZigbeeState } from './lib/zigbee-graph.js';
+import { isNetworkId, NetworkId } from './lib/graph.js';
+import { buildThreadGraph, ThreadInput, trimThreadInput } from './lib/thread-graph.js';
+import { buildZwaveGraph, trimZwaveInput, ZwaveInput } from './lib/zwave-graph.js';
 import {
   buildNetworkGraph, fetchStates, isProbe, NetworkApi, probeStates,
-} from './lib/networks';
-import { startWebServer, urlHost } from './lib/web-server';
+} from './lib/networks.js';
+import { startWebServer, urlHost } from './lib/web-server.js';
 import {
   DEFAULT_SETTINGS, moveSnapshots, SnapshotSettings, Snapshots, toSettings,
-} from './lib/snapshots';
-import buildExport, { ExportPoint } from './lib/export';
-import { stripSecrets } from './lib/safe-json';
-import buildProbe, { ProbeApi } from './lib/probe';
+} from './lib/snapshots.js';
+import buildExport, { ExportPoint } from './lib/export.js';
+import { stripSecrets } from './lib/safe-json.js';
+import buildProbe, { ProbeApi } from './lib/probe.js';
 
 /** The visualizer's port: 8154, after IEEE 802.15.4, the radio under Zigbee. */
 const WEB_PORT = 8154;
@@ -47,7 +47,7 @@ const WEB_SERVER_KEY = 'webServer';
 /** The slice of the Web API client this app uses. */
 type HomeyApiClient = NetworkApi;
 
-module.exports = class NetworkVisualizerApp extends Homey.App {
+export default class NetworkVisualizerApp extends Homey.App {
 
   /** Resolves to a HomeyAPI instance; created once, reused after that. */
   private homeyApi?: Promise<HomeyApiClient>;
@@ -337,4 +337,4 @@ module.exports = class NetworkVisualizerApp extends Homey.App {
     return `http://${urlHost(address)}:${WEB_PORT}/`;
   }
 
-};
+}

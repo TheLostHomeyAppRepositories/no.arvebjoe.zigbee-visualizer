@@ -1,6 +1,7 @@
 {
   "name": "no.arvebjoe.network-visualizer",
   "version": "1.4.1",
+  "type": "module",
   "engines": {
     "node": ">=16"
   },

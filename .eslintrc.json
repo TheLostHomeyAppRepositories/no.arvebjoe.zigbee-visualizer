@@ -12,13 +12,20 @@
     }
   },
   "rules": {
-    "import/extensions": ["error", "ignorePackages", { "js": "never", "ts": "never" }]
+    "import/extensions": ["error", "ignorePackages", { "js": "always", "ts": "never" }]
   },
   "overrides": [
     {
+      "files": ["*.ts"],
+      "rules": {
+        "import/no-unresolved": "off",
+        "node/no-missing-import": "off"
+      }
+    },
+    {
       "files": ["web/**/*.js"],
       "env": { "browser": true, "node": false },
-      "globals": { "d3": "readonly" },
+      "globals": { "d3": "readonly", "root": "off" },
       "parserOptions": { "sourceType": "script", "project": null },
       "rules": {
         "@typescript-eslint/no-floating-promises": "off",

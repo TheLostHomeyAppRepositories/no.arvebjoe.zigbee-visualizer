@@ -1,6 +1,6 @@
 'use strict';
 
-import type { RawZigbeeNode, ZigbeeState } from './zigbee-graph';
+import type { RawZigbeeNode, ZigbeeState } from './zigbee-graph.js';
 
 /** One moment in the export: a saved snapshot, or the live state at the end. */
 export type ExportPoint = {

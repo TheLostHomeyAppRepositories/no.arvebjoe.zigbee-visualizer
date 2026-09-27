@@ -67,6 +67,7 @@
     "url": "https://github.com/arvebjoe/no.arvebjoe.network-visualizer/issues"
   },
   "support": "https://github.com/arvebjoe/no.arvebjoe.network-visualizer/issues",
+  "esm": true,
   "widgets": {
     "network-map": {
       "name": {

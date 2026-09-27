@@ -9,10 +9,10 @@
  * shape. That is how a dump from someone else's Homey is drawn.
  */
 
-import type { Graph, NetworkId } from './graph';
-import { buildGraph, ZigbeeState } from './zigbee-graph';
-import { buildThreadGraph, ThreadInput } from './thread-graph';
-import { buildZwaveGraph, ZwaveInput } from './zwave-graph';
+import type { Graph, NetworkId } from './graph.js';
+import { buildGraph, ZigbeeState } from './zigbee-graph.js';
+import { buildThreadGraph, ThreadInput } from './thread-graph.js';
+import { buildZwaveGraph, ZwaveInput } from './zwave-graph.js';
 
 export type NetworkStates = {
   zigbee?: ZigbeeState | null;

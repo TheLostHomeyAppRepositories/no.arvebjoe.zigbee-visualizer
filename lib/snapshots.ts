@@ -3,8 +3,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type Homey from 'homey';
-import toSafeJson from './safe-json';
-import type { Graph } from './graph';
+import toSafeJson from './safe-json.js';
+import type { Graph } from './graph.js';
 
 /** One "hour" of the interval. Set it to 60 * 1000 to test in minutes instead. */
 export const HOUR_MS = 60 * 60 * 1000;

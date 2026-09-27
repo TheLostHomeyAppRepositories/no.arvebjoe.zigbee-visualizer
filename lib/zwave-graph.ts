@@ -16,7 +16,7 @@
 
 import {
   blankNode, describeRate, Fact, finishGraph, gradeFor, Graph, GraphLink, GraphNode,
-} from './graph';
+} from './graph.js';
 
 type Named = { name?: string; value?: number };
 

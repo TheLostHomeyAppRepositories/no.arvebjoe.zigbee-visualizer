@@ -30,7 +30,7 @@
 
 import {
   blankNode, Fact, finishGraph, Grade, Graph, GraphLink, GraphNode,
-} from './graph';
+} from './graph.js';
 
 /** One router or child in `thread.getNetworkTopology()`. */
 export type ThreadTopologyEntry = {

@@ -16,12 +16,12 @@
 
 import {
   blankNode, describeRate, finishGraph, gradeFor, Graph, GraphLink, GraphNode,
-} from './graph';
+} from './graph.js';
 
 export type {
   Grade, Graph, GraphLink, GraphNode,
-} from './graph';
-export { gradeFor } from './graph';
+} from './graph.js';
+export { gradeFor } from './graph.js';
 
 const COORDINATOR_ADDR = 0;
 

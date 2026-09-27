@@ -4,6 +4,7 @@ import fs from 'fs';
 import http from 'http';
 import net from 'net';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 /**
  * What app.ts hands the server when it starts it. The page gets graphs, never
@@ -49,7 +50,7 @@ const SETTINGS_LIMIT = 10 * 1024;
 const DUMP_LIMIT = 5 * 1024 * 1024;
 
 /** The page, its styles and its scripts; web/ sits next to lib/ in the app. */
-const WEB_ROOT = path.join(__dirname, '..', 'web');
+const WEB_ROOT = fileURLToPath(new URL('../web', import.meta.url));
 
 /** The only file types the page is made of — anything else is a 404. */
 const CONTENT_TYPES: Record<string, string> = {

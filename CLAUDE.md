@@ -95,10 +95,11 @@ The real workflow is the Homey CLI, which runs the TS build itself — prefer `h
 about the `homey:manager:api` review.
 
 No test script or framework is configured. The `lib/` modules have no Homey dependency, so they can be
-exercised outside a Homey: compile them to a scratch folder with
-`npx tsc --ignoreConfig lib/web-server.ts ... --outDir <dir> --module commonjs --types node`, then drive
-`startWebServer()` or `Snapshots` from a small Node script with fake callbacks and a fake `homey`
-(`setTimeout`, `clearTimeout`, `clock.getTimezone`).
+exercised outside a Homey: compile to a scratch folder with `npx tsc -p . --outDir <dir>`, put a
+`{"type":"module"}` `package.json` in it (the build is ESM), then drive `startWebServer()` or `Snapshots`
+from a small `.mjs` script with fake callbacks and a fake `homey` (`setTimeout`, `clearTimeout`,
+`clock.getTimezone`). `lib/web-server.ts` finds the page at `<dir>/web`. The whole app runs the same way
+with stub `homey` and `homey-api` packages in the folder's `node_modules`.
 
 ### Line endings
 
@@ -108,14 +109,18 @@ rewrites `app.json` with LF on every build, which a CRLF checkout shows as modif
 `linebreak-style` reports every line of a CRLF file. A clone made before the file existed needs one
 re-checkout (`git rm --cached -r . && git reset --hard`, on a clean tree).
 
-### `homey app create` is broken upstream — do not re-run it
+### `homey app create` with ESLint needs CLI 4.5.1 or later
 
 **Homey CLI 4.5.0 cannot create an app with ESLint enabled.** `App.create()` runs
 `npm install --save-dev eslint@^7.32.0 eslint-config-athom`, but `eslint-config-athom@4` declares
 `peerDependencies: eslint >=8.57.1 <9.0.0`. npm fails with ERESOLVE and creation aborts partway,
 leaving only `package.json` plus empty directories — every file after that step is silently missing.
-If you ever need to scaffold again (a fresh app, or to recover a file), **answer `No` to "Use ESLint?"**
-— creation then completes — and wire up ESLint afterwards as this repo does. Reproduced on 2026-09-19.
+Reproduced on 2026-09-19.
+
+**4.5.1 fixes it** ([athombv/node-homey#654](https://github.com/athombv/node-homey/pull/654)): it installs
+`eslint@~8.57.1` with `eslint-config-athom@~4.0.2`, and for TypeScript puts TS 6 under `typescript` (for
+the linter) beside TS 7 under an alias (for `tsc`). That is from the release notes and the diff, not yet
+tried here. On 4.5.0, answer `No` to "Use ESLint?" and wire ESLint up afterwards as this repo does.
 
 ### TypeScript setup
 
@@ -126,6 +131,12 @@ unless the resolved `outDir` is exactly `./.homeybuild`, and only then runs `npm
 Types come from `@types/homey`, which is an alias for `homey-apps-sdk-v3-types` — so `import Homey from
 'homey'` type-checks even though the `homey` module itself is supplied by the Homey runtime at execution
 time and is never a dependency of this app. Keep the alias when touching `package.json`.
+
+**The app is an ES module** (`"type": "module"` in `package.json`, which the CLI copies into
+`.homeybuild/`), as the CLI's templates are since 4.5.1; Homey runs ESM apps from v12.0.1. So:
+`app.ts`, `api.ts` and the widget's `api.ts` use `export default`; every relative import ends in `.js`
+(`tsc` reports a missing one as TS2835); and there is no `__dirname`, so `lib/web-server.ts` finds `web/`
+from `import.meta.url`. A CommonJS dependency is imported as usual: Node finds `homey-api`'s named exports.
 
 ### The TypeScript version is pinned to 6.x by the linter
 
@@ -157,9 +168,11 @@ already depends on them. That is deliberate: legacy eslintrc resolves plugins fr
 npm nests the config's own copies (the `typescript` version conflict prevents hoisting), so without the
 top-level entries ESLint fails with "couldn't find the plugin".
 
-Known noise: the Homey TS templates use `import Homey from 'homey'` together with `module.exports = class`,
-which trips `import/no-import-module-exports` as a warning on every import in `app.ts` and `api.ts`. It is
-inherent to the SDK's CommonJS pattern, not a bug in the code.
+Two overrides come from the switch to ESM. In `*.ts`, `import/no-unresolved` and `node/no-missing-import`
+are off: they look for `./graph.js` on disk, where only `graph.ts` is, and `tsc` already fails the build on
+an import it can't resolve. In `web/**/*.js`, the global `root` is off: with `"type": "module"`,
+`eslint-plugin-node` switches to its module preset, which declares Node's globals directly, so
+`env.node: false` no longer removes them and `web/app.js`'s own `root` counts as a redeclaration.
 
 ### Homey CLI
 

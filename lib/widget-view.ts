@@ -2,7 +2,7 @@
 
 import type {
   Grade, Graph, GraphNode, NetworkId,
-} from './graph';
+} from './graph.js';
 
 /**
  * The dashboard widget's view of the network: the graph from buildGraph(),
