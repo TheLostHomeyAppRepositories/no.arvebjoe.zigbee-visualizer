@@ -25,5 +25,8 @@
   },
   "1.4.1": {
     "en": "• Snapshot history has its own settings for each network: switch Zigbee, Thread & Matter and Z-Wave on or off separately, each with its own interval and number of snapshots to keep. What you had set for Zigbee and Thread is kept.\n• Z-Wave now has a snapshot history too, with a Changes tab listing the devices that joined or left."
+  },
+  "1.4.2": {
+    "en": "Behind the scenes: the app now uses the newer module format Homey recommends for apps. Nothing changes in what you see or in your settings and history."
   }
 }

@@ -1,6 +1,6 @@
 {
   "id": "no.arvebjoe.network-visualizer",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "compatibility": ">=12.4.0",
   "sdk": 3,
   "brandColor": "#E8951F",
