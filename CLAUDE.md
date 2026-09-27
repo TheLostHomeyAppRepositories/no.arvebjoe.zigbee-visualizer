@@ -43,18 +43,21 @@ There are three front ends over the same data:
     don't get), so each device is joined straight to Homey, graded by TX counters.
 - `lib/networks.ts` — `buildNetworkGraph(network, states)`, `fetchStates()` (live, from the Web API)
   and `probeStates()` (from a probe dump, which the browser view's Load dialog also accepts).
-  Z-Wave keeps no history, and the export is Zigbee only.
+  The export is Zigbee only.
 - `lib/widget-view.ts` — `buildWidgetView()`: the widget's view of a graph, with the settings page's
   radial-tree layout done on the Homey. The settings page still has its own copy of that layout in
   its script.
-- `lib/snapshots.ts` — the history, one `Snapshots` per network on the same settings: Zigbee's in
-  `/userdata/snapshots/` (the one writable folder; it survives updates), Thread's in
-  `/userdata/snapshots/thread/`, cut down by `trimThreadInput()`. Route history follows a device by its
-  graph `key` (a Matter node id on Thread), else its IEEE address. A snapshot is `<UTC time>.json`, e.g. `2026-09-24T12-00-00Z.json`, so sorting by name is
+- `lib/snapshots.ts` — the history, one `Snapshots` per network, each with its own folder under
+  `/userdata/snapshots/` (the one writable folder; it survives updates) — `zigbee/`, `thread/`, `zwave/` —
+  and its own settings. Thread's and Z-Wave's states are cut down by `trimThreadInput()` /
+  `trimZwaveInput()`. Route history follows a device by its graph `key` (a Matter node id on Thread,
+  `node:<id>` on Z-Wave, where it only shows joins and leaves), else its IEEE address. A snapshot is `<UTC time>.json`, e.g. `2026-09-24T12-00-00Z.json`, so sorting by name is
   sorting by time. Dumps imported in the browser live in the same folder as `import-<UTC time>.json`,
   and the prefix keeps them out of `list()`: they are not part of the timeline, the route history or the
-  export. Settings are stored under the app setting `snapshots`; changing the interval deletes the
-  history. `HOUR_MS` can be set to a minute to test the schedule quickly.
+  export. Settings are stored per network under the app setting `snapshots.<network>`; changing a
+  network's interval deletes that network's history. Up to 1.4.0 Zigbee's files sat directly in
+  `/userdata/snapshots/` and one `snapshots` setting drove Zigbee and Thread together; `onInit` moves both
+  (`moveSnapshots()`, `migrateSettings()`). `HOUR_MS` can be set to a minute to test the schedule quickly.
 - `lib/export.ts` — the downloadable history, summarised for analysis by an AI.
 - `lib/safe-json.ts` — `toSafeJson()` / `stripSecrets()`. **The network key must never be sent or
   stored**: everything written to disk goes through `toSafeJson`, and an imported dump through

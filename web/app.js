@@ -16,6 +16,7 @@ const NETWORKS = {
     label: 'Zigbee',
     tabs: ['quality', 'traffic', 'changes'],
     history: true,
+    routeHistory: true,
     exportable: true,
     legend: [['good', 'Good — 95%+ TX success'], ['fair', 'Fair — 85–95%'], ['weak', 'Weak — 70–85%'],
       ['bad', 'Bad — under 70%'], ['unknown', 'Too little traffic to judge']],
@@ -30,6 +31,7 @@ const NETWORKS = {
     label: 'Thread & Matter',
     tabs: ['quality', 'changes'],
     history: true,
+    routeHistory: true,
     exportable: false,
     legend: [['good', 'Good — link quality 3 of 3'], ['fair', 'Fair — 2 of 3'], ['weak', 'Weak — 1 of 3'],
       ['bad', 'Bad — 0 of 3'], ['unknown', 'Not reported']],
@@ -44,8 +46,10 @@ const NETWORKS = {
   },
   zwave: {
     label: 'Z-Wave',
-    tabs: ['quality', 'traffic'],
-    history: false,
+    tabs: ['quality', 'traffic', 'changes'],
+    history: true,
+    // Every device hangs straight off Homey, so there is no route to follow, only who joined and left.
+    routeHistory: false,
     exportable: false,
     legend: [['good', 'Good — 95%+ TX success'], ['fair', 'Fair — 85–95%'], ['weak', 'Weak — 70–85%'],
       ['bad', 'Bad — under 70%'], ['unknown', 'Too little traffic to judge']],
@@ -245,9 +249,11 @@ function setNetwork(network) {
   // The download is the Zigbee history, summarised for analysis; there is no such summary for Thread yet.
   document.getElementById('historyDownload').hidden = !NETWORKS[network].exportable;
   if (changed) {
-    // Each network has its own snapshots; the list fills in again once they are read.
+    // Each network has its own snapshots and settings; they fill in again once they are read.
     historySnapshots = null;
+    historySettings = null;
     // Looked up here: the boot code picks the network before the history pane's own code has run.
+    document.getElementById('historySettingsPanel').hidden = true;
     document.getElementById('historyList').innerHTML = '<button class="history-item active" type="button" data-snap="" title="Live">●</button>';
     if (NETWORKS[network].history) loadHistory();
   }
@@ -1529,6 +1535,7 @@ const hsEnabled = document.getElementById('hsEnabled');
 const hsInterval = document.getElementById('hsInterval');
 const hsKeep = document.getElementById('hsKeep');
 const hsWarn = document.getElementById('hsWarn');
+const hsIntro = document.getElementById('hsIntro');
 
 // The gear opens the panel with the settings as they are now, and closes it again.
 document.getElementById('historySettings').addEventListener('click', () => {
@@ -1536,6 +1543,8 @@ document.getElementById('historySettings').addEventListener('click', () => {
     hsPanel.hidden = true;
     return;
   }
+  hsIntro.textContent = `Saves the ${NETWORKS[state.network].label} network on the clock, so you can look back at it later. `
+    + 'Each network has its own settings.';
   hsEnabled.checked = historySettings.enabled;
   hsInterval.value = String(historySettings.intervalHours);
   hsKeep.value = String(historySettings.keep);
@@ -1557,7 +1566,8 @@ document.getElementById('historyDownload').addEventListener('click', () => {
 });
 
 document.getElementById('hsSave').addEventListener('click', () => {
-  fetch('api/settings', {
+  const { network } = state;
+  fetch(`api/settings?network=${network}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1567,7 +1577,7 @@ document.getElementById('hsSave').addEventListener('click', () => {
     .then((res) => {
       if (!res.ok) throw new Error(res.status === 400 ? 'keep must be a whole number from 2 to 24' : `HTTP ${res.status}`);
       hsPanel.hidden = true;
-      toast('Snapshot settings saved', 'ok');
+      toast(`${NETWORKS[network].label} snapshot settings saved`, 'ok');
       loadHistory();
     })
     .catch((err) => toast(`Could not save the settings: ${err.message}`, 'warn'));
@@ -1634,7 +1644,6 @@ function compareShown() {
   state.changes = null;
   applyHighlight();
   if (!state.selected) renderOverview();
-  // Z-Wave keeps no snapshots.
   if (!NETWORKS[state.network].history) return;
   const olderId = olderThan(historyActive);
   if (!olderId) return;
@@ -1690,7 +1699,7 @@ const FLAP_THRESHOLD = 3;
 function loadRouteHistory(n) {
   const box = document.getElementById('routeHistory');
   if (!box) return;
-  if (!NETWORKS[state.network].history || !historyKey(n) || n.isCoordinator || n.isGhost) {
+  if (!NETWORKS[state.network].routeHistory || !historyKey(n) || n.isCoordinator || n.isGhost) {
     box.remove();
     return;
   }

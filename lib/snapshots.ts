@@ -108,6 +108,23 @@ function msSinceLocalMidnight(date: Date, timeZone: string): number {
   return ((part('hour') * 60 + part('minute')) * 60 + part('second')) * 1000 + date.getMilliseconds();
 }
 
+/**
+ * Moves every snapshot and imported dump in `from` into `to`, and returns how
+ * many it moved. Only files named like one are touched, so the folders of other
+ * networks' histories inside `from` stay where they are.
+ */
+export async function moveSnapshots(from: string, to: string): Promise<number> {
+  const names = await fs.readdir(from).catch(() => [] as string[]);
+  const ids = names
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => name.slice(0, -'.json'.length))
+    .filter((id) => ID_PATTERN.test(id) || isImportId(id));
+  if (!ids.length) return 0;
+  await fs.mkdir(to, { recursive: true });
+  await Promise.all(ids.map((id) => fs.rename(path.join(from, `${id}.json`), path.join(to, `${id}.json`))));
+  return ids.length;
+}
+
 /** Saves one network's state on every clock slot, and keeps only the newest few. */
 export class Snapshots {
 

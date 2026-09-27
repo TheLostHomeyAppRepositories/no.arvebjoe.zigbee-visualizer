@@ -22,8 +22,8 @@ export type WebServerOptions = {
   listRoutes: (network: string | null) => Promise<unknown>;
   /** Every snapshot plus the live state, summarised for analysis, as JSON text. */
   getExport: () => Promise<string>;
-  /** Validates and applies new snapshot settings; resolves to null when they are not valid. */
-  saveSettings: (input: unknown) => Promise<unknown>;
+  /** Validates and applies one network's new snapshot settings; resolves to null when they are not valid. */
+  saveSettings: (input: unknown, network: string | null) => Promise<unknown>;
   /** Every imported dump kept on the Homey, oldest first. */
   listImports: () => Promise<unknown>;
   /**
@@ -271,13 +271,15 @@ function isJsonPost(req: http.IncomingMessage, res: http.ServerResponse): boolea
   return false;
 }
 
-/** Saves new snapshot settings sent by the page, and answers with what was saved. */
-function serveSettings(req: http.IncomingMessage, res: http.ServerResponse, { saveSettings, log }: WebServerOptions) {
+/** Saves one network's new snapshot settings sent by the page, and answers with what was saved. */
+function serveSettings(
+  req: http.IncomingMessage, res: http.ServerResponse, network: string | null, { saveSettings, log }: WebServerOptions,
+) {
   if (!isJsonPost(req, res)) return;
   // 400 only for what the page sent; a failure on this side is a 500, so the
   // page doesn't tell the user to fix settings that were fine.
   readJson(req, SETTINGS_LIMIT).then(
-    (input) => saveSettings(input).then(
+    (input) => saveSettings(input, network).then(
       (saved) => {
         if (saved === null) send(res, 400, 'text/plain; charset=utf-8', 'Invalid settings');
         else send(res, 200, 'application/json; charset=utf-8', JSON.stringify(saved));
@@ -326,7 +328,7 @@ export function startWebServer(options: WebServerOptions): http.Server {
     const imported = pathname.match(/^\/api\/imports(?:\/([^/]+))?$/);
 
     if (req.method === 'POST' && pathname === '/api/settings') {
-      serveSettings(req, res, options);
+      serveSettings(req, res, url.searchParams.get('network'), options);
       return;
     }
     if (req.method === 'POST' && imported && !imported[1]) {

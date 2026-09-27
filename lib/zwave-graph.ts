@@ -81,6 +81,7 @@ export function buildZwaveGraph(input: ZwaveInput): Graph {
 
   const homey = {
     ...blankNode(0, 'Homey', 'coordinator'),
+    key: 'homey',
     nwkAddr: controllerId,
     addrLabel: `node ${controllerId}`,
     isCoordinator: true,
@@ -116,6 +117,8 @@ export function buildZwaveGraph(input: ZwaveInput): Graph {
 
     const node: GraphNode = {
       ...blankNode(id, names[String(id)] || kind || `Z-Wave node ${id}`, listening ? 'router' : 'enddevice'),
+      // A node id stays with the device until it is excluded; a new inclusion gets a new one.
+      key: `node:${id}`,
       addrLabel: `node ${id}`,
       receiveWhenIdle: listening,
       stats: {
@@ -156,4 +159,58 @@ export function buildZwaveGraph(input: ZwaveInput): Graph {
       notice: NOTICE,
     },
   });
+}
+
+/**
+ * The Z-Wave state cut down to what buildZwaveGraph reads, for a snapshot:
+ * Homey's state carries much more per node than the map shows. Null when
+ * Homey has no Z-Wave devices, so there is no history of nothing.
+ */
+export function trimZwaveInput(input: ZwaveInput): ZwaveInput | null {
+  const zw = input.state?.zw_state;
+  const controllerId = zw?.nodeId ?? 1;
+  const ids = (zw?.nodes ?? []).filter((id) => id !== controllerId);
+  if (!zw || !ids.length) return null;
+
+  const nodeSettings: Record<string, ZwaveNodeSettings> = {};
+  const stats: NonNullable<NonNullable<ZwaveState['zw_state']>['stats']> = {};
+  ids.forEach((id) => {
+    const n = zw.nodeSettings?.[String(id)];
+    if (n) {
+      nodeSettings[String(id)] = {
+        deviceClassGeneric: n.deviceClassGeneric,
+        deviceClassSpecific: n.deviceClassSpecific,
+        manufacturerId: n.manufacturerId,
+        productTypeId: n.productTypeId,
+        productId: n.productId,
+        applicationVersion: n.applicationVersion,
+        applicationSubVersion: n.applicationSubVersion,
+        capability: { listening: n.capability?.listening },
+      };
+    }
+    const counters = zw.stats?.[`node_${id}_network`];
+    if (counters) {
+      stats[`node_${id}_network`] = {
+        tx: counters.tx, tx_ok: counters.tx_ok, tx_err: counters.tx_err, rx: counters.rx,
+      };
+    }
+  });
+
+  return {
+    state: {
+      zw_ready: input.state?.zw_ready,
+      zw_error: input.state?.zw_error,
+      zw_state: {
+        nodeId: zw.nodeId,
+        homeId: zw.homeId,
+        nodes: zw.nodes,
+        nodeSettings,
+        stats,
+        noAckNodes: zw.noAckNodes,
+        version: zw.version,
+        softwareRegion: zw.softwareRegion,
+      },
+    },
+    deviceNames: input.deviceNames,
+  };
 }
